@@ -53,6 +53,94 @@ int monitor(RNode* node) {
     return avail;
 }
 
+RNode** discover(RNetwork* net, const char* type, int* out_count) {
+    int count = 0;
+    RNode** results = malloc(net->node_count * sizeof(RNode*));
+
+    for (int i = 0; i < net->node_count; i++) {
+        RNode* node = net->nodes[i];
+        pthread_mutex_lock(&node->lock);
+        if (strcmp(node->type, type) == 0 && node->available > 0) {
+            results[count++] = node;
+        }
+        pthread_mutex_unlock(&node->lock);
+    }
+
+    *out_count = count;
+    return results;
+}
+
+RNode* aggregate(RNode** nodes, int count, const char* name, const char* type) {
+    int total_capacity = 0;
+    int total_available = 0;
+
+    for (int i = 0; i < count; i++) {
+        total_capacity += nodes[i]->capacity;
+        pthread_mutex_lock(&nodes[i]->lock);
+        total_available += nodes[i]->available;
+        pthread_mutex_unlock(&nodes[i]->lock);
+    }
+
+    RNode* agg = (RNode*)malloc(sizeof(RNode));
+    strcpy(agg->name, name);
+    strcpy(agg->type, type);
+    agg->capacity = total_capacity;
+    agg->available = total_available;
+    pthread_mutex_init(&agg->lock, NULL);
+
+    // Optionally, store pointers to constituent nodes for migration
+    agg->links = NULL; // not used
+    agg->link_count = 0;
+
+    return agg;
+}
+
+RNode* slice(RNode* node, int amount, const char* name) {
+    pthread_mutex_lock(&node->lock);
+    if (amount > node->available) {
+        pthread_mutex_unlock(&node->lock);
+        return NULL; // cannot slice more than available
+    }
+    node->available -= amount;
+    pthread_mutex_unlock(&node->lock);
+
+    RNode* sub = (RNode*)malloc(sizeof(RNode));
+    strcpy(sub->name, name);
+    strcpy(sub->type, node->type);
+    sub->capacity = amount;
+    sub->available = amount;
+    pthread_mutex_init(&sub->lock, NULL);
+    sub->links = NULL;
+    sub->link_count = 0;
+
+    return sub;
+}
+
+int migrate(RPacket* pkt, RNode* from, RNode* to) {
+    if (!reserve(to, pkt->amount)) {
+        printf("Migration failed: target node %s has insufficient capacity.\n", to->name);
+        return 0;
+    }
+
+    printf("Migrating %d units from %s -> %s...\n", pkt->amount, from->name, to->name);
+    usleep(pkt->amount * 50000); // simulate transfer delay
+
+    release(from, pkt->amount);
+    printf("Migration complete.\n");
+    return 1;
+}
+
+NodeStatus status(RNode* node) {
+    pthread_mutex_lock(&node->lock);
+    int avail = node->available;
+    int cap = node->capacity;
+    pthread_mutex_unlock(&node->lock);
+
+    if (avail == cap) return STATUS_OK;
+    else if (avail > cap / 2) return STATUS_BUSY;
+    else return STATUS_OVERLOAD;
+}
+
 // =====================
 // Link functions
 // =====================

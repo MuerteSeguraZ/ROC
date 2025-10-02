@@ -74,9 +74,16 @@ void destroy_node(RNode* node);
 // =====================
 // Resource operations
 // =====================
+typedef enum { STATUS_OK, STATUS_BUSY, STATUS_OVERLOAD } NodeStatus;
+
 int reserve(RNode* node, int amount);
 void release(RNode* node, int amount);
 int monitor(RNode* node);
+int migrate(RPacket* pkt, RNode* from, RNode* to);
+RNode* aggregate(RNode** nodes, int count, const char* name, const char* type);
+RNode* slice(RNode* node, int amount, const char* name);
+RNode** discover(RNetwork* net, const char* type, int* out_count);
+NodeStatus status(RNode* node);
 
 // =====================
 // Link management
