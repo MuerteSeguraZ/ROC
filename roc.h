@@ -40,6 +40,7 @@ typedef struct RLink {
     int bandwidth;  // units/sec
     int latency;    // milliseconds
     unsigned int permissions;
+    int enabled;
 } RLink;
 
 // =====================
@@ -80,8 +81,10 @@ int reserve(RNode* node, int amount);
 void release(RNode* node, int amount);
 int monitor(RNode* node);
 int migrate(RPacket* pkt, RNode* from, RNode* to);
+int migrate_timed(RNode* from, RNode* to, int amount, int timeout_ms);
+int reserve_timed(RNode* node, int amount, int timeout_ms);
 RNode* aggregate(RNode** nodes, int count, const char* name, const char* type);
-RNode* slice(RNode* node, int amount, const char* name);
+RNode* slice_node(RNode* node, const char* name, int capacity);
 RNode** discover(RNetwork* net, const char* type, int* out_count);
 NodeStatus status(RNode* node);
 
@@ -90,6 +93,15 @@ NodeStatus status(RNode* node);
 // =====================
 RLink* create_link(RNetwork* net, RNode* n1, RNode* n2, int bandwidth, int latency);
 void destroy_link(RLink* link);
+void link_perm(RLink* link, unsigned int permissions);
+unsigned int get_link_permissions(RLink* link);
+void set_link_bandwidth(RLink* link, int bandwidth);
+int get_link_bandwidth(RLink* link);
+void set_link_latency(RLink* link, int latency);
+int get_link_latency(RLink* link);
+void disable_link(RLink* link);
+void enable_link(RLink* link);
+int is_link_enabled(RLink* link);
 
 // =====================
 // Network management
@@ -118,6 +130,7 @@ void destroy_controller(RController* ctrl);
 
 // Sends a packet from src -> dst using controller's routing policy
 int send_packet(RController* ctrl, RNode* src, RNode* dst, int amount);
+int send_packet_timed(RController* ctrl, RNode* src, RNode* dst, int amount, int timeout_ms);
 
 // Change the controller's default policy
 void set_policy(RController* ctrl, RoutePolicy policy);

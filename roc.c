@@ -1,4 +1,5 @@
 #include "roc.h"
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -95,25 +96,26 @@ RNode* aggregate(RNode** nodes, int count, const char* name, const char* type) {
     return agg;
 }
 
-RNode* slice(RNode* node, int amount, const char* name) {
-    pthread_mutex_lock(&node->lock);
-    if (amount > node->available) {
-        pthread_mutex_unlock(&node->lock);
-        return NULL; // cannot slice more than available
+RNode* slice_node(RNode* node, const char* name, int capacity) {
+    if (capacity > node->available) {
+        printf("Cannot slice %d units from %s (only %d available)\n",
+               capacity, node->name, node->available);
+        return NULL;
     }
-    node->available -= amount;
-    pthread_mutex_unlock(&node->lock);
 
-    RNode* sub = (RNode*)malloc(sizeof(RNode));
-    strcpy(sub->name, name);
-    strcpy(sub->type, node->type);
-    sub->capacity = amount;
-    sub->available = amount;
-    pthread_mutex_init(&sub->lock, NULL);
-    sub->links = NULL;
-    sub->link_count = 0;
+    // Reserve the capacity in the original node
+    if (!reserve(node, capacity)) return NULL;
 
-    return sub;
+    // Create a new node representing the slice
+    RNode* slice = (RNode*)malloc(sizeof(RNode));
+    strcpy(slice->name, name);
+    strcpy(slice->type, node->type);
+    slice->capacity = capacity;
+    slice->available = capacity;
+    pthread_mutex_init(&slice->lock, NULL);
+
+    printf("Created slice %s with capacity %d\n", slice->name, slice->capacity);
+    return slice;
 }
 
 int migrate(RPacket* pkt, RNode* from, RNode* to) {
@@ -126,6 +128,25 @@ int migrate(RPacket* pkt, RNode* from, RNode* to) {
     usleep(pkt->amount * 50000); // simulate transfer delay
 
     release(from, pkt->amount);
+    printf("Migration complete.\n");
+    return 1;
+}
+
+int migrate_timed(RNode* from, RNode* to, int amount, int timeout_ms) {
+    int reserved = reserve_timed(from, amount, timeout_ms);
+    if (!reserved) {
+        printf("Migration failed: not enough resources on %s\n", from->name);
+        return 0;
+    }
+
+    printf("Migrating %d units from %s -> %s (timed %d ms)...\n",
+           amount, from->name, to->name, timeout_ms);
+
+    // Simulate transfer delay proportional to amount
+    usleep(amount * 50000); // arbitrary transfer time for demo
+    release(from, amount);
+    reserve(to, amount); // immediately add to destination
+
     printf("Migration complete.\n");
     return 1;
 }
@@ -167,6 +188,45 @@ RLink* create_link(RNetwork* net, RNode* n1, RNode* n2, int bandwidth, int laten
 
 void destroy_link(RLink* link) {
     free(link);
+}
+
+void link_perm(RLink* link, unsigned int permissions) {
+    if (!link) return;
+    link->permissions = permissions;
+}
+
+unsigned int get_link_permissions(RLink* link) {
+    if (!link) return 0;
+    return link->permissions;
+}
+
+void set_link_bandwidth(RLink* link, int bandwidth) {
+    if (!link) return;
+    link->bandwidth = bandwidth;
+}
+
+int get_link_bandwidth(RLink* link) {
+    return link->bandwidth;
+}
+
+void set_link_latency(RLink* link, int latency) {
+    link->latency = latency;
+}
+
+int get_link_latency(RLink* link) {
+    return link->latency;
+}
+
+void disable_link(RLink* link) {
+    link->enabled = 0;
+}
+
+void enable_link(RLink* link) {
+    link->enabled = 1;
+}
+
+int is_link_enabled(RLink* link) {
+    return link->enabled;
 }
 
 // =====================
@@ -222,6 +282,24 @@ int send_packet(RController* ctrl, RNode* src, RNode* dst, int amount) {
     pthread_mutex_lock(&ctrl->lock);
     RPacket pkt = { .src = src, .dst = dst, .amount = amount, .type = 0, .priority = 0 };
     int result = route_packet(ctrl->network, src, dst, &pkt, ctrl->policy);
+    pthread_mutex_unlock(&ctrl->lock);
+    return result;
+}
+
+int send_packet_timed(RController* ctrl, RNode* src, RNode* dst, int amount, int timeout_ms) {
+    pthread_mutex_lock(&ctrl->lock);
+
+    RPacket pkt = { .amount = amount };
+    int reserved = reserve_timed(src, amount, timeout_ms);
+    if (!reserved) {
+        printf("Failed to reserve %d units on %s\n", amount, src->name);
+        pthread_mutex_unlock(&ctrl->lock);
+        return 0;
+    }
+
+    // Route packet normally
+    int result = route_packet(ctrl->network, src, dst, &pkt, ctrl->policy);
+
     pthread_mutex_unlock(&ctrl->lock);
     return result;
 }
@@ -370,6 +448,7 @@ int find_path_widest(RNetwork* net, RNode* src, RNode* dst, RLink** path, int* p
     free(q); free(visited); free(width); free(prev_link);
     return 1;
 }
+
 int route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePolicy policy) {
     if (src == dst) {
         printf("Source and destination are the same.\n");
@@ -401,6 +480,13 @@ int route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePolic
     for (int i = plen - 1; i >= 0; i--) {
         RLink* l = path[i];
 
+        // Check if link is enabled
+        if (!l->enabled) {
+            printf("Link [%s -> %s] is disabled.\n", l->a->name, l->b->name);
+            release(src, pkt->amount);
+            return 0;
+        }
+
         // Policy/permission check
         if ((l->permissions & (1 << policy)) == 0) {
             printf("Link [%s -> %s] forbidden under this policy.\n", l->a->name, l->b->name);
@@ -417,5 +503,39 @@ int route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePolic
     }
 
     release(src, pkt->amount);
+    return 1;
+}
+
+// =====================
+// Timing stuff
+// =====================
+
+typedef struct TimedReserveArgs {
+    RNode* node;
+    int amount;
+    int timeout_ms;
+} TimedReserveArgs;
+
+static void* timed_release_thread(void* arg) {
+    TimedReserveArgs* args = (TimedReserveArgs*)arg;
+    usleep(args->timeout_ms * 1000); // sleep in microseconds
+    release(args->node, args->amount);
+    free(args);
+    return NULL;
+}
+
+int reserve_timed(RNode* node, int amount, int timeout_ms) {
+    if (!reserve(node, amount)) return 0;
+
+    // Start a detached thread to auto-release
+    pthread_t tid;
+    TimedReserveArgs* args = malloc(sizeof(TimedReserveArgs));
+    args->node = node;
+    args->amount = amount;
+    args->timeout_ms = timeout_ms;
+
+    pthread_create(&tid, NULL, timed_release_thread, args);
+    pthread_detach(tid);
+
     return 1;
 }

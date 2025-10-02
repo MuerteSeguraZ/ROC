@@ -1,83 +1,52 @@
 #include "roc.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 int main() {
-    // =====================
-    // Create network and nodes
-    // =====================
+    printf("[+] Creating network and nodes...\n");
     RNetwork* net = create_network();
+
     RNode* cpu  = create_node("CPU",  "compute", 100);
     RNode* ram  = create_node("RAM",  "memory",  200);
-    RNode* gpu  = create_node("GPU",  "compute", 150);
     RNode* disk = create_node("Disk", "storage", 300);
+    RNode* gpu  = create_node("GPU",  "compute", 150);
 
     add_node(net, cpu);
     add_node(net, ram);
-    add_node(net, gpu);
     add_node(net, disk);
+    add_node(net, gpu);
 
-    // Links
-    create_link(net, cpu, ram, 20, 5);
-    create_link(net, cpu, gpu, 15, 10);
-    create_link(net, ram, disk, 10, 15);
-    create_link(net, gpu, disk, 5, 20);
+    printf("[+] Creating links...\n");
+    RLink* l1 = create_link(net, cpu, ram, 20, 10);
+    RLink* l2 = create_link(net, cpu, gpu, 15, 20);
+    RLink* l3 = create_link(net, ram, disk, 10, 5);
+    RLink* l4 = create_link(net, gpu, disk, 5, 50);
 
-    RController* ctrl = create_controller(net, POLICY_SHORTEST);
+    printf("[+] Testing link permissions...\n");
+    printf("Original permissions CPU->GPU: 0x%X\n", get_link_permissions(l2));
+    link_perm(l2, l2->permissions & ~(1 << POLICY_SHORTEST));
+    printf("Modified permissions CPU->GPU: 0x%X\n", get_link_permissions(l2));
 
-    // =====================
-    // Test discover
-    // =====================
-    int count;
-    RNode** compute_nodes = discover(net, "compute", &count);
-    printf("Discovered %d compute nodes:\n", count);
-    for (int i = 0; i < count; i++)
-        printf(" - %s (%d/%d available)\n", compute_nodes[i]->name, compute_nodes[i]->available, compute_nodes[i]->capacity);
-    free(compute_nodes);
+    printf("[+] Testing bandwidth/latency getters/setters...\n");
+    printf("CPU->RAM bandwidth: %d, latency: %d\n", get_link_bandwidth(l1), get_link_latency(l1));
+    set_link_bandwidth(l1, 50);
+    set_link_latency(l1, 2);
+    printf("Updated CPU->RAM bandwidth: %d, latency: %d\n", get_link_bandwidth(l1), get_link_latency(l1));
 
-    // =====================
-    // Test aggregate
-    // =====================
-    RNode* agg = aggregate((RNode*[]){cpu, gpu}, 2, "ComputePool", "compute");
-    printf("Aggregated node %s with capacity %d and available %d\n", agg->name, agg->capacity, agg->available);
+    printf("[+] Testing enable/disable link...\n");
+    printf("GPU->Disk enabled? %d\n", is_link_enabled(l4));
+    disable_link(l4);
+    printf("GPU->Disk enabled after disable? %d\n", is_link_enabled(l4));
+    enable_link(l4);
+    printf("GPU->Disk enabled after re-enable? %d\n", is_link_enabled(l4));
 
-    // =====================
-    // Test slice
-    // =====================
-    RNode* cpu_slice = slice(cpu, 40, "CPU_Slice");
-    if (cpu_slice)
-        printf("Created slice %s with capacity %d\n", cpu_slice->name, cpu_slice->capacity);
+    printf("[+] Destroying links...\n");
+    destroy_link(l1);
+    destroy_link(l2);
+    destroy_link(l3);
+    destroy_link(l4);
 
-    // =====================
-    // Test send_packet
-    // =====================
-    printf("\n--- Routing CPU -> Disk ---\n");
-    send_packet(ctrl, cpu, disk, 50);
-
-    // =====================
-    // Test migrate
-    // =====================
-    RPacket pkt = { .amount = 30 };
-    migrate(&pkt, ram, gpu);
-
-    // =====================
-    // Test status
-    // =====================
-    NodeStatus s_cpu  = status(cpu);
-    NodeStatus s_ram  = status(ram);
-    NodeStatus s_gpu  = status(gpu);
-    NodeStatus s_disk = status(disk);
-
-    printf("\n--- Node statuses ---\n");
-    printf("CPU:  %d\nRAM:  %d\nGPU:  %d\nDisk: %d\n", s_cpu, s_ram, s_gpu, s_disk);
-
-    // =====================
-    // Cleanup
-    // =====================
-    destroy_node(cpu_slice);
-    destroy_node(agg);
-    destroy_controller(ctrl);
     destroy_network(net);
-
     return 0;
 }
