@@ -19,7 +19,7 @@ git add .
 REM Commit with timestamp message
 for /f "tokens=1-3 delims=/ " %%a in ("%date%") do (
     for /f "tokens=1-2 delims=:." %%x in ("%time%") do (
-        set commitmsg=Update %%c-%%a-%%b %%x%%y
+        set commitmsg=Update %%c-%%a-%%b %%x:%%y
     )
 )
 git commit -m "%commitmsg%"
