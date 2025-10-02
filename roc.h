@@ -3,24 +3,34 @@
 
 #include <pthread.h>
 
+// Forward declarations
+struct RNode;
+struct RLink;
+
 // Resource Node
 typedef struct RNode {
     char name[50];
     char type[20];
     int capacity;
     int available;
+
+    struct RLink** links;
+    int link_count;
+
     pthread_mutex_t lock;
 } RNode;
 
 // Resource Packet
 typedef struct RPacket {
     int amount;
+    RNode* src;
+    RNode* dst;
 } RPacket;
 
 // Resource Link
 typedef struct RLink {
-    RNode* node1;
-    RNode* node2;
+    RNode* from;
+    RNode* to;
     int bandwidth; // units per second
 } RLink;
 
@@ -44,7 +54,9 @@ int monitor(RNode* node);
 // Link operations
 RLink* create_link(RNode* n1, RNode* n2, int bandwidth);
 void destroy_link(RLink* link);
-void transfer(RLink* link, RPacket* packet);
+
+// Transfer with routing
+void transfer_packet(RNetwork* net, RPacket* packet);
 
 // Network operations
 RNetwork* create_network();

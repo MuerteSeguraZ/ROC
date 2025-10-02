@@ -11,11 +11,14 @@ RNode* create_node(const char* name, const char* type, int capacity) {
     strcpy(node->type, type);
     node->capacity = capacity;
     node->available = capacity;
+    node->links = NULL;
+    node->link_count = 0;
     pthread_mutex_init(&node->lock, NULL);
     return node;
 }
 
 void destroy_node(RNode* node) {
+    free(node->links);
     pthread_mutex_destroy(&node->lock);
     free(node);
 }
@@ -48,9 +51,17 @@ int monitor(RNode* node) {
 // ===== Link functions =====
 RLink* create_link(RNode* n1, RNode* n2, int bandwidth) {
     RLink* link = (RLink*)malloc(sizeof(RLink));
-    link->node1 = n1;
-    link->node2 = n2;
+    link->from = n1;
+    link->to = n2;
     link->bandwidth = bandwidth;
+
+    // Add link to both nodes
+    n1->links = (RLink**)realloc(n1->links, (n1->link_count + 1) * sizeof(RLink*));
+    n1->links[n1->link_count++] = link;
+
+    n2->links = (RLink**)realloc(n2->links, (n2->link_count + 1) * sizeof(RLink*));
+    n2->links[n2->link_count++] = link;
+
     return link;
 }
 
@@ -58,13 +69,87 @@ void destroy_link(RLink* link) {
     free(link);
 }
 
-void transfer(RLink* link, RPacket* packet) {
-    printf("[%s -> %s] Transferring %d units...\n",
-           link->node1->name, link->node2->name, packet->amount);
-    usleep((packet->amount * 1000000) / link->bandwidth); // simulate
-    printf("[%s] Received %d units!\n", link->node2->name, packet->amount);
+// ===== Routing (simple BFS) =====
+typedef struct {
+    RNode* node;
+    RNode* prev;
+} NodeRecord;
+
+int find_path(RNetwork* net, RNode* src, RNode* dst, RNode** path, int* path_len) {
+    NodeRecord records[128];
+    int visited[128] = {0};
+    int qhead = 0, qtail = 0;
+
+    records[qtail++] = (NodeRecord){src, NULL};
+    visited[(size_t)src % 128] = 1;
+
+    while (qhead < qtail) {
+        NodeRecord rec = records[qhead++];
+        if (rec.node == dst) {
+            // reconstruct path
+            int len = 0;
+            RNode* cur = dst;
+            while (cur) {
+                path[len++] = cur;
+                // find prev
+                RNode* prev = NULL;
+                for (int i = 0; i < qtail; i++) {
+                    if (records[i].node == cur) {
+                        prev = records[i].prev;
+                        break;
+                    }
+                }
+                cur = prev;
+            }
+            // reverse
+            for (int i = 0; i < len/2; i++) {
+                RNode* tmp = path[i];
+                path[i] = path[len-1-i];
+                path[len-1-i] = tmp;
+            }
+            *path_len = len;
+            return 1;
+        }
+        // expand neighbors
+        for (int i = 0; i < rec.node->link_count; i++) {
+            RLink* link = rec.node->links[i];
+            RNode* next = (link->from == rec.node) ? link->to : link->from;
+            if (!visited[(size_t)next % 128]) {
+                visited[(size_t)next % 128] = 1;
+                records[qtail++] = (NodeRecord){next, rec.node};
+            }
+        }
+    }
+    return 0;
 }
 
+// ===== Packet transfer =====
+void transfer_packet(RNetwork* net, RPacket* pkt) {
+    RNode* path[64];
+    int path_len = 0;
+
+    if (!find_path(net, pkt->src, pkt->dst, path, &path_len)) {
+        printf("No route from %s to %s\n", pkt->src->name, pkt->dst->name);
+        return;
+    }
+
+    // reserve from source
+    if (!reserve(pkt->src, pkt->amount)) {
+        printf("Not enough resources at %s\n", pkt->src->name);
+        return;
+    }
+
+    for (int i = 0; i < path_len - 1; i++) {
+        RNode* cur = path[i];
+        RNode* next = path[i+1];
+        printf("[%s -> %s] Transferring %d units...\n", cur->name, next->name, pkt->amount);
+        usleep((pkt->amount * 1000000) / 50); // fake bandwidth
+        printf("[%s] Received %d units!\n", next->name, pkt->amount);
+    }
+
+    release(pkt->src, pkt->amount);
+}
+ 
 // ===== Network functions =====
 RNetwork* create_network() {
     RNetwork* net = (RNetwork*)malloc(sizeof(RNetwork));
@@ -86,12 +171,8 @@ void add_link(RNetwork* net, RLink* link) {
 }
 
 void destroy_network(RNetwork* net) {
-    for (int i = 0; i < net->node_count; i++) {
-        destroy_node(net->nodes[i]);
-    }
-    for (int i = 0; i < net->link_count; i++) {
-        destroy_link(net->links[i]);
-    }
+    for (int i = 0; i < net->node_count; i++) destroy_node(net->nodes[i]);
+    for (int i = 0; i < net->link_count; i++) destroy_link(net->links[i]);
     free(net->nodes);
     free(net->links);
     free(net);
