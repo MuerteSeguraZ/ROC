@@ -24,14 +24,32 @@ typedef struct RLink {
     int bandwidth; // units per second
 } RLink;
 
-// Functions
+// Resource Network
+typedef struct RNetwork {
+    RNode** nodes;
+    int node_count;
+    RLink** links;
+    int link_count;
+} RNetwork;
+
+// Node management
 RNode* create_node(const char* name, const char* type, int capacity);
 void destroy_node(RNode* node);
 
+// Resource operations
 int reserve(RNode* node, int amount);
 void release(RNode* node, int amount);
 int monitor(RNode* node);
 
+// Link operations
+RLink* create_link(RNode* n1, RNode* n2, int bandwidth);
+void destroy_link(RLink* link);
 void transfer(RLink* link, RPacket* packet);
+
+// Network operations
+RNetwork* create_network();
+void add_node(RNetwork* net, RNode* node);
+void add_link(RNetwork* net, RLink* link);
+void destroy_network(RNetwork* net);
 
 #endif
