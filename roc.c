@@ -94,6 +94,40 @@ void destroy_network(RNetwork* net) {
 }
 
 // =====================
+// Controller stuff
+// =====================
+
+RController* create_controller(RNetwork* net, RoutePolicy policy) {
+    RController* ctrl = (RController*)malloc(sizeof(RController));
+    ctrl->network = net;
+    ctrl->policy = policy;
+    pthread_mutex_init(&ctrl->lock, NULL);
+    return ctrl;
+}
+
+void destroy_controller(RController* ctrl) {
+  pthread_mutex_destroy(&ctrl->lock);
+  free(ctrl);
+}
+
+void set_policy(RController* ctrl, RoutePolicy policy) {
+  pthread_mutex_lock(&ctrl->lock);
+  ctrl->policy = policy;
+  pthread_mutex_unlock(&ctrl->lock);
+}
+
+int send_packet(RController* ctrl, RNode* src, RNode* dst, int amount) {
+    int result = 0;
+    pthread_mutex_lock(&ctrl->lock);
+
+    RPacket pkt = { .amount = amount };
+    result = route_packet(ctrl->network, src, dst, &pkt, ctrl->policy);
+
+    pthread_mutex_unlock(&ctrl->lock);
+    return result;
+}
+
+// =====================
 // Routing (BFS shortest / widest)
 // =====================
 typedef struct QueueItem {
@@ -106,10 +140,10 @@ static int link_connects(RLink* l, RNode* n1, RNode* n2) {
     return (l->a == n1 && l->b == n2) || (l->a == n2 && l->b == n1);
 }
 
-void route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePolicy policy) {
+int route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePolicy policy) {
     if (src == dst) {
         printf("Source and destination are the same.\n");
-        return;
+        return 0; // nothing sent
     }
 
     // BFS queue
@@ -156,7 +190,7 @@ void route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePoli
         printf("No route from %s to %s\n", src->name, dst->name);
         free(q);
         free(visited);
-        return;
+        return 0; // failed
     }
 
     // Reconstruct path
@@ -167,7 +201,9 @@ void route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePoli
 
     if (!reserve(src, pkt->amount)) {
         printf("Not enough resources at %s\n", src->name);
-        return;
+        free(q);
+        free(visited);
+        return 0; // failed
     }
 
     // Send along path (from src to dst)
@@ -187,4 +223,6 @@ void route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePoli
 
     free(q);
     free(visited);
+
+    return 1; // success
 }

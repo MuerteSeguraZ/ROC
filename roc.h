@@ -64,7 +64,25 @@ RNetwork* create_network();
 void add_node(RNetwork* net, RNode* node);
 void destroy_network(RNetwork* net);
 
-// Routing
-void route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePolicy policy);
+// Routing / transfer
+int route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePolicy policy);
+
+// RController
+
+typedef struct RController {
+    RNetwork* network;
+    RoutePolicy policy;       // Default routing policy
+    pthread_mutex_t lock;     // For thread-safe operations
+} RController;
+
+// Controller operations
+RController* create_controller(RNetwork* net, RoutePolicy policy);
+void destroy_controller(RController* ctrl);
+
+// Sends a packet from src -> dst using controller's routing policy
+int send_packet(RController* ctrl, RNode* src, RNode* dst, int amount);
+
+// Change the controller's default policy
+void set_policy(RController* ctrl, RoutePolicy policy);
 
 #endif
