@@ -5,7 +5,8 @@ if exist roc.exe del roc.exe
 
 echo [+] Compiling ROC project...
 
-gcc roc.c roc_task.c roc_scheduler.c main.c -o roc.exe -lpthread
+:: Compile all .c files from src/ folder
+gcc -Iinclude src\*.c -o roc.exe -lpthread
 if errorlevel 1 (
     echo [!] Compilation failed. Check for errors.
     exit /b 1

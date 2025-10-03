@@ -1,4 +1,5 @@
-#include "include/roc_scheduler.h"
+#include "roc_scheduler.h"
+#include "roc_task.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -40,8 +41,8 @@ static void* scheduler_thread(void* arg) {
 
             pthread_mutex_unlock(&sched->lock);
 
-            // Run task asynchronously
-            if (!run_task_async(task)) {
+            // Run task in its own thread (allocates resources internally)
+            if (!run_task(task)) {
                 printf("[Scheduler] Failed to run task '%s'.\n", task->name);
             }
 
