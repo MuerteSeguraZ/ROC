@@ -55,6 +55,24 @@ typedef struct RNetwork {
 } RNetwork;
 
 // =====================
+// Queue
+// =====================
+typedef struct QueueItem {
+    RNode* node;
+    RLink* prev;
+    struct QueueItem* parent;
+} QueueItem;
+
+// =====================
+// Timing struct
+// =====================
+typedef struct TimedReserveArgs {
+    RNode* node;
+    int amount;
+    int timeout_ms;
+} TimedReserveArgs;
+
+// =====================
 // Routing policy
 // =====================
 typedef enum {
@@ -109,6 +127,14 @@ int is_link_enabled(RLink* link);
 RNetwork* create_network();
 void add_node(RNetwork* net, RNode* node);
 void destroy_network(RNetwork* net);
+int remove_node(RNetwork* net, RNode* node);
+RNode* find_node(RNetwork* net, const char* name);
+int count_nodes(RNetwork* net);
+void list_nodes(RNetwork* net);
+int count_links(RNetwork* net);
+void list_links(RNetwork* net);
+int connect_nodes(RNetwork* net, const char* name1, const char* name2, int bandwidth, int latency);
+int disconnect_nodes(RNetwork* net, const char* name1, const char* name2);
 
 // =====================
 // Routing / transfer

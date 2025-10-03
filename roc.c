@@ -172,6 +172,7 @@ RLink* create_link(RNetwork* net, RNode* n1, RNode* n2, int bandwidth, int laten
     link->bandwidth = bandwidth;
     link->latency = latency;
     link->permissions = 0xFFFFFFFF; // default: all allowed
+    link->enabled = 1;
 
     net->links = realloc(net->links, (net->link_count + 1) * sizeof(RLink*));
     net->links[net->link_count++] = link;
@@ -246,6 +247,97 @@ void add_node(RNetwork* net, RNode* node) {
     net->nodes[net->node_count++] = node;
 }
 
+int remove_node(RNetwork* net, RNode* node) {
+    int idx = -1;
+    for (int i = 0; i < net->node_count; i++) {
+        if (net->nodes[i] == node) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx == -1) return 0;
+
+    // Remove links involving this node
+    for (int i = 0; i < net->link_count;) {
+        if (net->links[i]->a == node || net->links[i]->b == node) {
+            destroy_link(net->links[i]);
+            for (int j = i; j < net->link_count - 1; j++) {
+                net->links[j] = net->links[j + 1];
+            }
+            net->link_count--;
+        } else {
+            i++;
+        }
+    }
+
+    // Remove node from list
+    for (int i = idx; i < net->node_count - 1; i++) {
+        net->nodes[i] = net->nodes[i + 1];
+    }
+    net->node_count--;
+    return 1;
+}
+
+RNode* find_node(RNetwork* net, const char* name) {
+    for (int i = 0; i < net->node_count; i++) {
+        if (strcmp(net->nodes[i]->name, name) == 0)
+            return net->nodes[i];
+    }
+    return NULL;
+}
+
+int count_nodes(RNetwork* net) {
+    return net->node_count;
+}
+
+void list_nodes(RNetwork* net) {
+    printf("Nodes in network (%d):\n", net->node_count);
+    for (int i = 0; i < net->node_count; i++) {
+        printf(" - %s (%s, %d/%d)\n",
+               net->nodes[i]->name,
+               net->nodes[i]->type,
+               net->nodes[i]->available,
+               net->nodes[i]->capacity);
+    }
+}
+
+int count_links(RNetwork* net) {
+    return net->link_count;
+}
+
+void list_links(RNetwork* net) {
+    printf("Links in network (%d):\n", net->link_count);
+    for (int i = 0; i < net->link_count; i++) {
+        RLink* l = net->links[i];
+        printf(" - [%s <-> %s] bw=%d, lat=%d, enabled=%d\n",
+               l->a->name, l->b->name, l->bandwidth, l->latency, l->enabled);
+    }
+}
+
+int connect_nodes(RNetwork* net, const char* name1, const char* name2, int bandwidth, int latency) {
+    RNode* n1 = find_node(net, name1);
+    RNode* n2 = find_node(net, name2);
+    if (!n1 || !n2) return 0;
+    create_link(net, n1, n2, bandwidth, latency);
+    return 1;
+}
+
+int disconnect_nodes(RNetwork* net, const char* name1, const char* name2) {
+    for (int i = 0; i < net->link_count; i++) {
+        RLink* l = net->links[i];
+        if ((strcmp(l->a->name, name1) == 0 && strcmp(l->b->name, name2) == 0) ||
+            (strcmp(l->a->name, name2) == 0 && strcmp(l->b->name, name1) == 0)) {
+            destroy_link(l);
+            for (int j = i; j < net->link_count - 1; j++) {
+                net->links[j] = net->links[j + 1];
+            }
+            net->link_count--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void destroy_network(RNetwork* net) {
     for (int i = 0; i < net->node_count; i++)
         destroy_node(net->nodes[i]);
@@ -307,22 +399,11 @@ int send_packet_timed(RController* ctrl, RNode* src, RNode* dst, int amount, int
 // =====================
 // Routing (BFS shortest / widest)
 // =====================
-typedef struct QueueItem {
-    RNode* node;
-    RLink* prev;
-    struct QueueItem* parent;
-} QueueItem;
-
 static int link_allowed(RLink* link, RoutePolicy policy) {
     return (link->permissions & (1 << policy)) != 0; // simple permission mask
 }
 
 int find_path_shortest(RNetwork* net, RNode* src, RNode* dst, RLink** path, int* plen) {
-    typedef struct QueueItem {
-        RNode* node;
-        RLink* prev;
-        struct QueueItem* parent;
-    } QueueItem;
 
     QueueItem** q = malloc(net->node_count * sizeof(QueueItem*));
     int qh = 0, qt = 0;
@@ -509,12 +590,6 @@ int route_packet(RNetwork* net, RNode* src, RNode* dst, RPacket* pkt, RoutePolic
 // =====================
 // Timing stuff
 // =====================
-
-typedef struct TimedReserveArgs {
-    RNode* node;
-    int amount;
-    int timeout_ms;
-} TimedReserveArgs;
 
 static void* timed_release_thread(void* arg) {
     TimedReserveArgs* args = (TimedReserveArgs*)arg;
