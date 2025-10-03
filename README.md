@@ -19,7 +19,8 @@
 10. [Jobs & Job Queue (`roc_job.h` / `roc_job.c`, `roc_job_queue.h` / `roc_job_queue.c`)](#jobs--job-queue)
 11. [Workflows & Workflow Queue (`roc_workflow.h` / `roc_workflow.c` / `roc_workflow_queue.h` / `roc_workflow_queue.c`)](#workflows--workflow-queue)
 12. [Pipes & Pipe Queue (`roc_pipe.h` / `roc_pipe.c` / `roc_pipe_queue.h` / `roc_pipe_queue.c`)](#pipes--pipe-queue)
-13. [Example Usage](#example-usage)
+13. [Stages & Stage Queue (`roc_stage.h` / `roc_stage.c` / `roc_stage_queue.h` / `roc_stage_queue.c`)](#stages--stage-queue)
+14. [Example Usage](#example-usage)
 
 ---
 
@@ -474,6 +475,57 @@ pipe_queue_run(queue, sched);
 * Pipes queues respect pipe priorities.
 * Tasks within a pipe execute sequentially, but multiple pipes can run in parallel depending on available resources.
 * Useful for modeling pipelines of dependent tasks with resource constraints.
+
+---
+
+## Stages & Stage Queue
+
+Stages allow you to group multiple jobs and/or workflows together, so they can be executed as a single unit. Stages can have a priority level and support both sequential and parallel execution of their contained items.
+
+**Key Concepts:**
+
+* **RStage** – Represents a collection of jobs and workflows executed together.
+* **StageItem** – Can be either a job or a workflow inside a stage.
+* **RStageQueue** – A queue of stages executed in order, respecting their priorities.
+
+**Key Functions:**
+
+```c
+// Stage operations
+RStage* create_stage(const char* name, int priority);
+void destroy_stage(RStage* stage);
+int stage_add_item(RStage* stage, void* item, StageItemType type);
+int stage_run(RStage* stage, RTaskScheduler* sched);
+StageStatus stage_status(RStage* stage);
+
+// Stage queue operations
+RStageQueue* create_stage_queue(const char* name);
+void destroy_stage_queue(RStageQueue* queue);
+int stage_queue_add(RStageQueue* queue, RStage* stage);
+int stage_queue_run(RStageQueue* queue, RTaskScheduler* sched);
+StageQueueStatus stage_queue_status(RStageQueue* queue);
+```
+
+**Usage Example:**
+```c
+RStage* stage = create_stage("Stage-Alpha", 10);
+stage_add_item(stage, job1, STAGE_ITEM_JOB);
+stage_add_item(stage, wf1, STAGE_ITEM_WORKFLOW);
+stage_run(stage, scheduler);
+
+RStageQueue* queue = create_stage_queue("MainQueue");
+stage_queue_add(queue, stage1);
+stage_queue_add(queue, stage2);
+stage_queue_run(queue, scheduler);
+```
+
+**Notes:**
+* Stages are thread-safe.
+* Supports mixed contents: jobs and workflows in the same stage.
+* Stage queues ensure sequential execution of multiple stages.
+* Stage and stage queue statuses allow monitoring of completion or failure.
+
+---
 
 ## Notes
 

@@ -1,4 +1,5 @@
 #include "roc_pipe_queue.h"
+#include "roc_pipe.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,7 +46,7 @@ void run_pipe_queue_priority(RPipeQueue* queue, RTaskScheduler* sched) {
     pthread_mutex_unlock(&queue->lock);
 
     for (int i = 0; i < queue->pipe_count; i++) {
-        run_pipe(queue->pipes[i], sched);
+        pipe_run(queue->pipes[i], sched);
         while (pipe_status(queue->pipes[i]) != PIPE_COMPLETED) {
             usleep(50000);
         }

@@ -24,7 +24,7 @@ typedef struct {
 } RPipe;
 
 // Pipe operations
-RPipe* create_pipe(const char* name);
+RPipe* create_pipe(const char* name, int priority);
 void destroy_pipe(RPipe* pipe);
 
 int pipe_add_task(RPipe* pipe, RTask* task);
