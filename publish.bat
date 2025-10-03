@@ -16,12 +16,19 @@ if not exist ".git" (
 REM Add all changes
 git add .
 
-REM Commit with timestamp message
-for /f "tokens=1-3 delims=/ " %%a in ("%date%") do (
-    for /f "tokens=1-2 delims=:." %%x in ("%time%") do (
-        set commitmsg=Update %%c-%%a-%%b %%x:%%y
+REM Prompt for commit message
+set /p commitmsg=Enter commit message (leave empty for default): 
+
+REM If empty, generate timestamp-based message
+if "%commitmsg%"=="" (
+    for /f "tokens=1-3 delims=/ " %%a in ("%date%") do (
+        for /f "tokens=1-2 delims=:." %%x in ("%time%") do (
+            set commitmsg=Update %%c-%%a-%%b %%x:%%y
+        )
     )
 )
+
+REM Commit changes
 git commit -m "%commitmsg%"
 
 REM Push to remote

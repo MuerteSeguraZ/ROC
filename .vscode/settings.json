@@ -2,6 +2,8 @@
   "C_Cpp.errorSquiggles": "disabled",
   "files.associations": {
     "string.h": "c",
-    "roc.c": "c"
+    "roc.c": "c",
+    "roc.h": "c",
+    "roc_scheduler.h": "c"
   }
 }

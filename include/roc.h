@@ -3,6 +3,8 @@
 
 #include <pthread.h>
 
+typedef enum { NODE_CPU, NODE_GPU, NODE_MEMORY, NODE_STORAGE } NodeType;
+
 // =====================
 // Resource Node
 // =====================
