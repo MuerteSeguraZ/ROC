@@ -18,7 +18,8 @@ typedef enum {
 typedef enum {
     STAGE_ITEM_JOB,
     STAGE_ITEM_WORKFLOW,
-    STAGE_ITEM_TASK
+    STAGE_ITEM_TASK,
+    STAGE_ITEM_CAMPAIGN 
 } StageItemType;
 
 typedef struct {
