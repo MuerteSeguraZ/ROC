@@ -1,3 +1,4 @@
+#include <windows.h>
 #include "roc_bundle_queue.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -57,7 +58,7 @@ int process_bundle_queue(RBundleQueue* queue, RTaskScheduler* sched) {
         // Wait for bundle to complete
         while (bundle_status(bundle) != BUNDLE_COMPLETED &&
                bundle_status(bundle) != BUNDLE_FAILED) {
-            usleep(50000);
+            Sleep(50);
         }
         printf("[BundleQueue] Bundle '%s' finished with status %d\n",
                bundle->name, bundle_status(bundle));

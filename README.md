@@ -20,7 +20,10 @@
 11. [Workflows & Workflow Queue (`roc_workflow.h` / `roc_workflow.c` / `roc_workflow_queue.h` / `roc_workflow_queue.c`)](#workflows--workflow-queue)
 12. [Pipes & Pipe Queue (`roc_pipe.h` / `roc_pipe.c` / `roc_pipe_queue.h` / `roc_pipe_queue.c`)](#pipes--pipe-queue)
 13. [Stages & Stage Queue (`roc_stage.h` / `roc_stage.c` / `roc_stage_queue.h` / `roc_stage_queue.c`)](#stages--stage-queue)
-14. [Example Usage](#example-usage)
+14. [Phases & Phase Queue (`roc_phase.h` / `roc_phase.c` / `roc_phase_queue.h` / `roc_phase_queue.c`)](#phases--phase-queue)
+15. [Bundles & Bundle Queue (`roc_bundle.h` / `roc_bundle.c` `roc_bundle_queue.h` / `roc_bundle_queue.c`)](#bundles--bundle-queue)
+16. [Campaigns & Campaign Queue (`roc_campaign.h` / `roc_campaign.c` / `roc_campaign_queue.h` / `roc_campaign_queue.c`)](#campaigns--campaign-queue)
+17. [Example Usage](#example-usage)
 
 ---
 
@@ -623,6 +626,379 @@ int main() {
     return 0;
 }
 ```
+
+---
+
+Here’s the section for **Phases & Phase Queue** fully formatted and consistent with your README style. I polished it to include concepts, functions, statuses, and examples while matching the style of the rest of your document:
+
+---
+
+## Phases & Phase Queue
+
+Phases are high-level orchestration units that group multiple **stages** or tasks together. Each phase can have a **priority**, and multiple phases can be executed sequentially or based on priority.
+
+Phase Queues allow you to enqueue multiple phases and execute them in order while respecting priorities.
+
+---
+
+### Phase Concepts
+
+* **RPhase** – Represents a phase containing multiple stages and/or tasks.
+* **PhaseStatus** – Status of a phase:
+
+  * `PHASE_PENDING`
+  * `PHASE_RUNNING`
+  * `PHASE_COMPLETED`
+  * `PHASE_FAILED`
+
+*Phases can contain:*
+
+* Individual tasks (`RTask`)
+* Entire stages (`RStage`)
+
+---
+
+### Key Functions
+
+```c
+// Phase operations
+RPhase* create_phase(const char* name, int priority);
+void destroy_phase(RPhase* phase);
+
+int phase_add_task(RPhase* phase, RTask* task);
+int phase_add_stage(RPhase* phase, RStage* stage);
+
+int phase_run(RPhase* phase, RTaskScheduler* sched);
+PhaseStatus phase_status(RPhase* phase);
+
+// Phase queue operations
+RPhaseQueue* create_phase_queue(const char* name);
+void destroy_phase_queue(RPhaseQueue* queue);
+
+int phase_queue_add(RPhaseQueue* queue, RPhase* phase);
+int phase_queue_run(RPhaseQueue* queue, RTaskScheduler* sched);
+PhaseQueueStatus phase_queue_status(RPhaseQueue* queue);
+```
+
+---
+
+### Example Usage
+
+```c
+#include "roc_phase.h"
+#include "roc_phase_queue.h"
+#include "roc_scheduler.h"
+#include "roc_task.h"
+#include <stdio.h>
+
+int main() {
+    // Create scheduler
+    RTaskScheduler* sched = create_scheduler();
+    scheduler_start(sched);
+
+    // --- Create phases ---
+    RPhase* phase1 = create_phase("Phase-Prime", 10);
+    RPhase* phase2 = create_phase("Phase-Secondary", 5);
+
+    // --- Add tasks to phases ---
+    RTask* t1 = create_task("Task-1", 5);
+    RTask* t2 = create_task("Task-2", 3);
+    phase_add_task(phase1, t1);
+    phase_add_task(phase2, t2);
+
+    // --- Create and run phase queue ---
+    RPhaseQueue* pq = create_phase_queue("MainPhaseQueue");
+    phase_queue_add(pq, phase1);
+    phase_queue_add(pq, phase2);
+    phase_queue_run(pq, sched);
+
+    // Cleanup
+    destroy_task(t1);
+    destroy_task(t2);
+    destroy_phase(phase1);
+    destroy_phase(phase2);
+    destroy_phase_queue(pq);
+    scheduler_stop(sched);
+    destroy_scheduler(sched);
+
+    printf("[Main] All phases completed\n");
+    return 0;
+}
+```
+
+---
+
+## Bundles & Bundle Queue
+
+Bundles are **collections of tasks, jobs, or workflows** that can be executed together as a single unit. Bundles provide a higher-level abstraction for managing related work and can be executed **sequentially or in parallel** depending on the scheduler.
+
+Bundle Queues allow you to enqueue multiple bundles and process them in **priority order** or sequentially.
+
+---
+
+### Bundle Concepts
+
+* **RBundle** – Represents a collection of tasks, jobs, or workflows.
+* **BundleStatus** – Status of a bundle:
+
+  * `BUNDLE_PENDING`
+  * `BUNDLE_RUNNING`
+  * `BUNDLE_COMPLETED`
+  * `BUNDLE_FAILED`
+
+*Bundles can contain:*
+
+* Tasks (`RTask`)
+* Jobs (`RJob`)
+* Workflows (`RWorkflow`)
+
+---
+
+### Key Functions
+
+```c
+// Bundle operations
+RBundle* create_bundle(const char* name, int priority);
+void destroy_bundle(RBundle* bundle);
+
+int bundle_add_task(RBundle* bundle, RTask* task);
+int bundle_add_job(RBundle* bundle, RJob* job);
+int bundle_add_workflow(RBundle* bundle, RWorkflow* wf);
+
+int bundle_run(RBundle* bundle, RTaskScheduler* sched);
+BundleStatus bundle_status(RBundle* bundle);
+
+// Bundle queue operations
+RBundleQueue* create_bundle_queue(const char* name);
+void destroy_bundle_queue(RBundleQueue* queue);
+
+int bundle_queue_add(RBundleQueue* queue, RBundle* bundle);
+int bundle_queue_run(RBundleQueue* queue, RTaskScheduler* sched);
+BundleQueueStatus bundle_queue_status(RBundleQueue* queue);
+```
+
+---
+
+### Example Usage
+
+```c
+#include "roc_bundle.h"
+#include "roc_bundle_queue.h"
+#include "roc_scheduler.h"
+#include "roc_task.h"
+#include "roc_job.h"
+#include <stdio.h>
+#include <unistd.h>
+
+int main() {
+    RTaskScheduler* sched = create_scheduler();
+    scheduler_start(sched);
+
+    // --- Create nodes ---
+    RNode* cpu = create_node("CPU", "CPU", 4);
+
+    // --- Create tasks ---
+    RTask* t1 = create_task("Task-CPU1", 2);
+    RTask* t2 = create_task("Task-CPU2", 1);
+    add_resource_req(t1, cpu, 2);
+    add_resource_req(t2, cpu, 1);
+
+    // --- Create jobs ---
+    RJob* job1 = create_job("Job-Alpha", 10);
+    job_add_task(job1, t1);
+
+    RJob* job2 = create_job("Job-Beta", 5);
+    job_add_task(job2, t2);
+
+    // --- Create bundles ---
+    RBundle* bundle1 = create_bundle("Bundle-Alpha", 10);
+    bundle_add_job(bundle1, job1);
+
+    RBundle* bundle2 = create_bundle("Bundle-Beta", 5);
+    bundle_add_job(bundle2, job2);
+
+    // --- Create and run bundle queue ---
+    RBundleQueue* bq = create_bundle_queue("MainBundleQueue");
+    bundle_queue_add(bq, bundle1);
+    bundle_queue_add(bq, bundle2);
+    bundle_queue_run(bq, sched);
+
+    // Wait for bundles to complete
+    while (bundle_status(bundle1) != BUNDLE_COMPLETED ||
+           bundle_status(bundle2) != BUNDLE_COMPLETED) {
+        usleep(50000);
+    }
+
+    printf("[Main] All bundles processed.\n");
+
+    // Cleanup
+    destroy_task(t1);
+    destroy_task(t2);
+    destroy_job(job1);
+    destroy_job(job2);
+    destroy_bundle(bundle1);
+    destroy_bundle(bundle2);
+    destroy_bundle_queue(bq);
+    scheduler_stop(sched);
+    destroy_scheduler(sched);
+    destroy_node(cpu);
+
+    return 0;
+}
+```
+
+---
+
+## Campaigns & Campaign Queue
+
+Campaigns are **high-level orchestration units** that group multiple bundles together. They provide an extra layer for managing large workflows or distributed tasks, allowing you to execute bundles **sequentially or in parallel** with campaign-level priorities.
+
+Campaign Queues allow you to enqueue multiple campaigns and execute them based on **priority or order**.
+
+---
+
+### Campaign Concepts
+
+* **RCampaign** – Represents a collection of bundles executed as a single logical unit.
+* **CampaignStatus** – Status of a campaign:
+
+  * `CAMPAIGN_PENDING`
+  * `CAMPAIGN_RUNNING`
+  * `CAMPAIGN_COMPLETED`
+  * `CAMPAIGN_FAILED`
+
+*Campaigns contain:*
+
+* Bundles (`RBundle`)
+
+---
+
+### Key Functions
+
+```c
+// Campaign operations
+RCampaign* create_campaign(const char* name, int priority);
+void destroy_campaign(RCampaign* campaign);
+
+int campaign_add_bundle(RCampaign* campaign, RBundle* bundle);
+int campaign_run(RCampaign* campaign, RTaskScheduler* sched);
+CampaignStatus campaign_status(RCampaign* campaign);
+
+// Campaign queue operations
+RCampaignQueue* create_campaign_queue(const char* name);
+void destroy_campaign_queue(RCampaignQueue* queue);
+
+int campaign_queue_add(RCampaignQueue* queue, RCampaign* campaign);
+int campaign_queue_run(RCampaignQueue* queue, RTaskScheduler* sched);
+CampaignQueueStatus campaign_queue_status(RCampaignQueue* queue);
+```
+
+---
+
+### Example Usage
+
+```c
+#include "roc_campaign.h"
+#include "roc_campaign_queue.h"
+#include "roc_bundle.h"
+#include "roc_bundle_queue.h"
+#include "roc_scheduler.h"
+#include "roc_task.h"
+#include "roc_job.h"
+#include <stdio.h>
+#include <unistd.h>
+
+int main() {
+    RTaskScheduler* sched = create_scheduler();
+    scheduler_start(sched);
+
+    // --- Create nodes ---
+    RNode* cpu = create_node("CPU", "CPU", 4);
+
+    // --- Create tasks and jobs ---
+    RTask* t1 = create_task("Task-CPU1", 2);
+    RTask* t2 = create_task("Task-CPU2", 1);
+    add_resource_req(t1, cpu, 2);
+    add_resource_req(t2, cpu, 1);
+
+    RJob* job1 = create_job("Job-Alpha", 10);
+    job_add_task(job1, t1);
+    RJob* job2 = create_job("Job-Beta", 5);
+    job_add_task(job2, t2);
+
+    // --- Create bundles ---
+    RBundle* bundle1 = create_bundle("Bundle-Alpha", 10);
+    bundle_add_job(bundle1, job1);
+    RBundle* bundle2 = create_bundle("Bundle-Beta", 5);
+    bundle_add_job(bundle2, job2);
+
+    // --- Create campaigns ---
+    RCampaign* campaign1 = create_campaign("Campaign-One", 10);
+    campaign_add_bundle(campaign1, bundle1);
+
+    RCampaign* campaign2 = create_campaign("Campaign-Two", 5);
+    campaign_add_bundle(campaign2, bundle2);
+
+    // --- Create and run campaign queue ---
+    RCampaignQueue* cq = create_campaign_queue("MainCampaignQueue");
+    campaign_queue_add(cq, campaign1);
+    campaign_queue_add(cq, campaign2);
+    campaign_queue_run(cq, sched);
+
+    // Wait for campaigns to complete
+    while (campaign_status(campaign1) != CAMPAIGN_COMPLETED ||
+           campaign_status(campaign2) != CAMPAIGN_COMPLETED) {
+        usleep(50000);
+    }
+
+    printf("[Main] All campaigns completed.\n");
+
+    // Cleanup
+    destroy_task(t1);
+    destroy_task(t2);
+    destroy_job(job1);
+    destroy_job(job2);
+    destroy_bundle(bundle1);
+    destroy_bundle(bundle2);
+    destroy_campaign(campaign1);
+    destroy_campaign(campaign2);
+    destroy_campaign_queue(cq);
+    scheduler_stop(sched);
+    destroy_scheduler(sched);
+    destroy_node(cpu);
+
+    return 0;
+}
+```
+
+---
+
+### Notes
+
+* Campaigns contain **multiple bundles**, which themselves can contain tasks, jobs, or workflows.
+* Campaign queues respect **priority** and **sequential execution**.
+* Task and bundle dependencies are automatically respected.
+* Campaign statuses allow monitoring of **completion or failure**.
+* Useful for **large-scale orchestration** of complex simulations or pipelines.
+
+---
+
+### Notes
+
+* Bundles can contain **mixed items**: tasks, jobs, workflows.
+* Bundle queues allow **priority-based execution**.
+* Tasks inside a bundle respect **dependencies and resource allocations**.
+* Bundle statuses track **completion and failure**.
+* Multiple bundles can execute **concurrently** if resources allow.
+
+---
+
+### Notes
+
+* Phases can mix **stages and tasks** in the same unit.
+* Phase queues execute phases **sequentially** respecting priority.
+* Supports **thread-safe execution** through the scheduler.
+* Phase and phase queue statuses allow monitoring of **completion or failure**.
 
 ---
 
