@@ -17,7 +17,9 @@
 8. [Tasks (`roc_task.h` / `roc_task.c`)](#tasks)
 9. [Scheduler (`roc_scheduler.h` / `roc_scheduler.c`)](#scheduler)
 10. [Jobs & Job Queue (`roc_job.h` / `roc_job.c`, `roc_job_queue.h` / `roc_job_queue.c`)](#jobs--job-queue)
-11. [Example Usage](#example-usage)
+11. [Workflows & Workflow Queue (`roc_workflow.h` / `roc_workflow.c` / `roc_workflow_queue.h` / `roc_workflow_queue.c`)](#workflows--workflow-queue)
+12. [Pipes & Pipe Queue (`roc_pipe.h` / `roc_pipe.c` / `roc_pipe_queue.h` / `roc_pipe_queue.c`)](#pipes--pipe-queue)
+13. [Example Usage](#example-usage)
 
 ---
 
@@ -382,6 +384,96 @@ int main() {
 ```
 
 ---
+
+## Workflows & Workflow Queue
+
+Workflows represent a sequence of tasks that can be executed together as a logical unit. Unlike jobs, workflows can contain **dependent tasks** and **parallel task execution**. Workflow-level priorities allow you to control which workflows run first when multiple workflows compete for resources.
+
+**Key Features:**
+* Workflow-level priority
+* Parallel and sequential task execution
+* Thread-safe operations
+* Workflow queues for ordering multiple workflows
+
+**Key Functions:**
+
+```c
+RWorkflow* create_workflow(const char* name, int priority);
+void destroy_workflow(RWorkflow* wf);
+
+int workflow_add_task(RWorkflow* wf, RTask* task);
+int workflow_run(RWorkflow* wf, RTaskScheduler* sched);
+WorkflowStatus workflow_status(RWorkflow* wf);
+```
+
+**Example Usage:**
+```c
+RWorkflow* wf1 = create_workflow("Workflow-Alpha", 10);
+RTask* t1 = create_task("Task-1", 5);
+add_resource_req(t1, cpu, 2);
+workflow_add_task(wf1, t1);
+
+RWorkflow* wf2 = create_workflow("Workflow-Beta", 5);
+RTask* t2 = create_task("Task-2", 3);
+add_resource_req(t2, gpu, 1);
+workflow_add_task(wf2, t2);
+
+// Run workflows in parallel
+workflow_run(wf1, sched);
+workflow_run(wf2, sched);
+```
+
+---
+
+## Pipes & Pipe Queue
+Pipes allow you to define **sequential or dependent task streams** where the output of one task can trigger the next. Like workflows, pipes support priorities and can be enqueued in a **pipe queue**.
+
+**Key Features:**
+
+* Pipe-level priority
+* Sequential task execution
+* Can run multiple pipes in parallel or in a queue
+* Thread-safe operations
+
+**Key Functions:**
+
+```c
+RPipe* create_pipe(const char* name, int priority);
+void destroy_pipe(RPipe* pipe);
+
+int pipe_add_task(RPipe* pipe, RTask* task);
+int pipe_run(RPipe* pipe, RTaskScheduler* sched);
+PipeStatus pipe_status(RPipe* pipe);
+
+// Pipe queues
+RPipeQueue* create_pipe_queue(const char* name);
+void destroy_pipe_queue(RPipeQueue* queue);
+int pipe_queue_add(RPipeQueue* queue, RPipe* pipe);
+int pipe_queue_run(RPipeQueue* queue, RTaskScheduler* sched);
+```
+
+**Example Usage:**
+```c
+RPipe* p1 = create_pipe("Pipe-Alpha", 5);
+RPipe* p2 = create_pipe("Pipe-Beta", 10);
+
+RTask* t1 = create_task("Task-1", 2);
+RTask* t2 = create_task("Task-2", 1);
+pipe_add_task(p1, t1);
+pipe_add_task(p1, t2);
+
+RPipeQueue* queue = create_pipe_queue("MainQueue");
+pipe_queue_add(queue, p1);
+pipe_queue_add(queue, p2);
+
+// Run queue
+pipe_queue_run(queue, sched);
+```
+
+**Notes:**
+* Pipes queues respect pipe priorities.
+* Tasks within a pipe execute sequentially, but multiple pipes can run in parallel depending on available resources.
+* Useful for modeling pipelines of dependent tasks with resource constraints.
 
 ## Notes
 
