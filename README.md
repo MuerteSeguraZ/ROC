@@ -527,6 +527,105 @@ stage_queue_run(queue, scheduler);
 
 ---
 
+## Phases & Phase Queue
+
+Phases are high-level orchestration units that group multiple **stages**. Each phase can contain several stages, and you can assign **priority** to phases for ordered execution. Phases can also include tasks directly if needed.
+
+Phase Queues allow you to run multiple phases sequentially or based on priority, similar to stage queues or workflow queues.
+
+---
+
+## Phase Concepts
+
+* **RPhase** – Represents a phase containing multiple stages or tasks.
+* **PhaseStatus** – Status of a phase:
+  * `PHASE_PENDING`
+  * `PHASE_RUNNING`
+  * `PHASE_COMPLETED`
+  * `PHASE_FAILED`
+
+---
+
+**Key Functions**
+
+```c
+// Phase creation and destruction
+RPhase* create_phase(const char* name, int priority);
+void destroy_phase(RPhase* phase);
+
+// Add tasks or stages
+int phase_add_task(RPhase* phase, RTask* task);
+int phase_add_stage(RPhase* phase, RStage* stage);
+
+// Run phase (requires scheduler)
+int phase_run(RPhase* phase, RTaskScheduler* sched);
+
+// Check status
+PhaseStatus phase_status(RPhase* phase);
+```
+
+## Phase Queue
+
+A Phase Queue executes multiple phases in order, respecting their priority. You can run phases sequentially or concurrently depending on the scheduler.
+
+```c
+typedef struct {
+    char name[50];
+    RPhase* phases[32];
+    int phase_count;
+} RPhaseQueue;
+
+// Queue operations
+RPhaseQueue* create_phase_queue(const char* name);
+void destroy_phase_queue(RPhaseQueue* queue);
+int phase_queue_add(RPhaseQueue* queue, RPhase* phase);
+int phase_queue_run(RPhaseQueue* queue, RTaskScheduler* sched);  // Runs phases respecting priority
+```
+
+**Example Usage:**
+```c
+#include "roc_phase.h"
+#include "roc_phase_queue.h"
+#include "roc_scheduler.h"
+#include "roc_task.h"
+#include <stdio.h>
+
+int main() {
+    RTaskScheduler* sched = create_scheduler();
+    scheduler_start(sched);
+
+    // --- Create phases ---
+    RPhase* phase1 = create_phase("Phase-Prime", 10);
+    RPhase* phase2 = create_phase("Phase-Secondary", 5);
+
+    // --- Add tasks to phases ---
+    RTask* t1 = create_task("Task-1", 5);
+    RTask* t2 = create_task("Task-2", 3);
+    phase_add_task(phase1, t1);
+    phase_add_task(phase2, t2);
+
+    // --- Create and run phase queue ---
+    RPhaseQueue* pq = create_phase_queue("MainPhaseQueue");
+    phase_queue_add(pq, phase1);
+    phase_queue_add(pq, phase2);
+    phase_queue_run(pq, sched);
+
+    // Cleanup
+    destroy_task(t1);
+    destroy_task(t2);
+    destroy_phase(phase1);
+    destroy_phase(phase2);
+    destroy_phase_queue(pq);
+    scheduler_stop(sched);
+    destroy_scheduler(sched);
+
+    printf("[Main] All phases completed\n");
+    return 0;
+}
+```
+
+---
+
 ## Notes
 
 * All operations on nodes, tasks, and controllers are **thread-safe**.

@@ -1,3 +1,4 @@
+#include <windows.h>
 #include "roc_stage_queue.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,7 +40,7 @@ int stage_queue_run(RStageQueue* queue, RTaskScheduler* sched) {
 
         // Wait until stage completes
         while (stage_status(queue->stages[i]) != STAGE_COMPLETED) {
-            usleep(50000);
+            Sleep(50);
         }
         printf("[StageQueue] Stage '%s' completed\n", queue->stages[i]->name);
     }

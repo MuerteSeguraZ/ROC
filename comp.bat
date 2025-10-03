@@ -5,7 +5,7 @@ if exist roc.exe del roc.exe
 
 echo [+] Compiling ROC project...
 
-:: Compile all .c files from src/ folder
+:: compila tot a dins del folder de src
 gcc -Iinclude src\*.c -o roc.exe -lpthread
 if errorlevel 1 (
     echo [!] Compilation failed. Check for errors.

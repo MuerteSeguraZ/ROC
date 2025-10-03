@@ -1,62 +1,46 @@
 #include "roc.h"
 #include "roc_task.h"
 #include "roc_scheduler.h"
-#include "roc_job.h"
-#include "roc_workflow.h"
 #include "roc_stage.h"
 #include "roc_stage_queue.h"
+#include "roc_phase.h"
+#include "roc_phase_queue.h"
 #include <stdio.h>
 #include <unistd.h>
 
 int main() {
+    // --- Create nodes ---
     RNode* cpu = create_node("CPU", "CPU", 8);
     RNode* gpu = create_node("GPU", "GPU", 4);
 
+    // --- Scheduler ---
     RTaskScheduler* sched = create_scheduler();
     scheduler_start(sched);
 
-    // --- Stage 1 ---
-    RStage* stage1 = create_stage("Stage-Alpha", 10);
-    RJob* job1 = create_job("Job-1", 5);
-    RTask* jt1 = create_task("Job-Task1", 2);
-    add_resource_req(jt1, cpu, 2);
-    job_add_task(job1, jt1);
-    stage_add_item(stage1, job1, STAGE_ITEM_JOB);
+    // --- Phase 1 ---
+    RPhase* phase1 = create_phase("Phase-Prime", 10);
+    RTask* t1 = create_task("Job-Task1", 5);
+    add_resource_req(t1, cpu, 2);
+    phase_add_task(phase1, t1);
 
-    RWorkflow* wf1 = create_workflow("Workflow-Beta", 5);
-    RTask* wt1 = create_task("Workflow-Task1", 1);
-    add_resource_req(wt1, gpu, 1);
-    workflow_add_task(wf1, wt1);
-    stage_add_item(stage1, wf1, STAGE_ITEM_WORKFLOW);
+    // --- Phase 2 ---
+    RPhase* phase2 = create_phase("Phase-Secondary", 5);
+    RTask* t2 = create_task("Workflow-Task1", 3);
+    add_resource_req(t2, gpu, 1);
+    phase_add_task(phase2, t2);
 
-    // --- Stage 2 ---
-    RStage* stage2 = create_stage("Stage-Beta", 5);
-    RJob* job2 = create_job("Job-2", 3);
-    RTask* jt2 = create_task("Job-Task2", 2);
-    add_resource_req(jt2, cpu, 2);
-    job_add_task(job2, jt2);
-    stage_add_item(stage2, job2, STAGE_ITEM_JOB);
+    // --- Phase Queue ---
+    RPhaseQueue* queue = create_phase_queue("MainPhaseQueue");
+    phase_queue_add(queue, phase1);
+    phase_queue_add(queue, phase2);
 
-    // --- Create Stage Queue ---
-    RStageQueue* queue = create_stage_queue("MainQueue");
-    stage_queue_add(queue, stage1);
-    stage_queue_add(queue, stage2);
+    // --- Run queue by priority ---
+    phase_queue_run_priority(queue, sched);
 
-    printf("=== Running stages in queue ===\n");
-    stage_queue_run_priority(queue, sched);
-
-    printf("[Main] All stages in queue completed\n");
-
-    // Cleanup
-    destroy_task(jt1);
-    destroy_task(jt2);
-    destroy_task(wt1);
-    destroy_job(job1);
-    destroy_job(job2);
-    destroy_workflow(wf1);
-    destroy_stage(stage1);
-    destroy_stage(stage2);
-    destroy_stage_queue(queue);
+    // --- Cleanup ---
+    destroy_task(t1);
+    destroy_task(t2);
+    destroy_phase_queue(queue);
     scheduler_stop(sched);
     destroy_scheduler(sched);
     destroy_node(cpu);
