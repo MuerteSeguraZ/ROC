@@ -16,7 +16,8 @@
 7. [Packets & Routing](#packets--routing)
 8. [Tasks (`roc_task.h` / `roc_task.c`)](#tasks)
 9. [Scheduler (`roc_scheduler.h` / `roc_scheduler.c`)](#scheduler)
-10. [Example Usage](#example-usage)
+10. [Jobs & Job Queue (`roc_job.h` / `roc_job.c`, `roc_job_queue.h` / `roc_job_queue.c`)](#jobs--job-queue)
+11. [Example Usage](#example-usage)
 
 ---
 
@@ -175,6 +176,137 @@ The scheduler manages multiple tasks, running them asynchronously and allocating
 * Tasks are executed in parallel threads using `pthread`.
 * Scheduler ensures tasks only run when required resources are available.
 * Task completion automatically releases reserved resources.
+
+---
+
+## Jobs & Job Queue
+
+Jobs represent a **collection of tasks** that can be scheduled together. Each job has a priority and can track dependencies between its tasks. The job queue allows **priority-based scheduling** of multiple jobs.
+
+**Key Types:**
+
+```c
+typedef struct {
+    char name[50];
+    RTask* tasks[MAX_TASKS_PER_JOB];
+    int task_count;
+    int priority;           // job-level priority
+    JobStatus status;       // JOB_PENDING, JOB_RUNNING, JOB_COMPLETED, JOB_FAILED
+    pthread_mutex_t lock;
+    int dep_matrix[MAX_TASKS_PER_JOB][MAX_TASKS_PER_JOB]; 
+    // dep_matrix[i][j] = 1 means task i depends on task j
+} RJob;
+```
+
+**Job Functions:**
+
+```c
+RJob* create_job(const char* name, int priority);
+void destroy_job(RJob* job);
+
+int job_add_task(RJob* job, RTask* task);
+int job_run(RJob* job, RTaskScheduler* sched);  // Enqueue all tasks
+JobStatus job_status(RJob* job);                // Check current job status
+```
+
+**Job Queue Functions:**
+
+```c
+typedef struct {
+    RJob* jobs[MAX_JOBS];
+    int job_count;
+    pthread_mutex_t lock;
+} RJobQueue;
+
+RJobQueue* create_job_queue();
+void destroy_job_queue(RJobQueue* queue);
+
+int enqueue_job(RJobQueue* queue, RJob* job);
+RJob* dequeue_job(RJobQueue* queue);          // Dequeues highest-priority job
+int process_job_queue(RJobQueue* queue, RTaskScheduler* sched); // Process all jobs
+```
+
+**Behavior:**
+
+* Jobs are executed **task by task**, respecting task dependencies.
+* Jobs can have a **priority**, so higher-priority jobs run before lower-priority ones.
+* Job queue allows multiple jobs to be enqueued and processed sequentially or based on priority.
+* Task completion automatically updates job status.
+
+---
+
+### Example Usage: Jobs & Job Queue
+
+```c
+#include "roc.h"
+#include "roc_task.h"
+#include "roc_scheduler.h"
+#include "roc_job.h"
+#include "roc_job_queue.h"
+#include <stdio.h>
+#include <unistd.h>
+
+int main() {
+    printf("=== ROC Job Queue Demo ===\n");
+
+    // --- Create nodes ---
+    RNode* cpu = create_node("CPU", "CPU", 4);
+
+    // --- Create scheduler ---
+    RTaskScheduler* sched = create_scheduler();
+    scheduler_start(sched);
+
+    // --- Create jobs ---
+    RJob* job1 = create_job("Job-Alpha", 10);
+    RTask* t1 = create_task("Task-A1", 5);
+    add_resource_req(t1, cpu, 2);
+    job_add_task(job1, t1);
+
+    RJob* job2 = create_job("Job-Beta", 20);
+    RTask* t2 = create_task("Task-B1", 5);
+    add_resource_req(t2, cpu, 2);
+    job_add_task(job2, t2);
+
+    // --- Create job queue ---
+    RJobQueue* queue = create_job_queue();
+    enqueue_job(queue, job1);
+    enqueue_job(queue, job2);
+
+    // --- Process job queue ---
+    process_job_queue(queue, sched);
+
+    // Wait for jobs to complete
+    while (job_status(job1) != JOB_COMPLETED || job_status(job2) != JOB_COMPLETED) {
+        usleep(50000);
+    }
+
+    printf("[Main] All jobs processed.\n");
+
+    // Cleanup
+    destroy_job(job1);
+    destroy_job(job2);
+    destroy_job_queue(queue);
+    scheduler_stop(sched);
+    destroy_scheduler(sched);
+    destroy_node(cpu);
+
+    return 0;
+}
+```
+
+**Output Example:**
+
+```
+[Main] Starting job 'Job-Beta'
+Running task 'Task-B1' using 2 resource units...
+Task 'Task-B1' completed.
+[Main] Job 'Job-Beta' completed.
+[Main] Starting job 'Job-Alpha'
+Running task 'Task-A1' using 2 resource units...
+Task 'Task-A1' completed.
+[Main] Job 'Job-Alpha' completed.
+[Main] All jobs processed.
+```
 
 ---
 
