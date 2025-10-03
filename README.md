@@ -1,6 +1,5 @@
----
 
-# ROC – Resource Orchestrator & Scheduler
+# ROC - Resource Orchestrator & Scheduler
 
 **ROC** is a lightweight C-based framework for simulating and managing computational resources, tasks, and resource-aware scheduling. It allows you to create a network of nodes (CPU, GPU, memory, storage), connect them via links, send "packets" of resources, and schedule tasks that consume these resources in a thread-safe manner.
 
