@@ -6,23 +6,76 @@
 
 int stats_printed;
 
+static void hw_query_topology(HWScheduler* sched) {
+    DWORD len = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &len);
+    SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* buffer =
+        (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)malloc(len);
+    if (!GetLogicalProcessorInformationEx(RelationProcessorCore, buffer, &len)) {
+        sched->num_physical_cores = sched->num_logical_cores;
+        sched->logical_to_physical = calloc(sched->num_logical_cores, sizeof(int));
+        for (int i = 0; i < sched->num_logical_cores; i++)
+            sched->logical_to_physical[i] = i;
+        return;
+    }
+
+    int phys_index = 0;
+    sched->logical_to_physical = calloc(sched->num_logical_cores, sizeof(int));
+
+    BYTE* ptr = (BYTE*)buffer;
+    while (ptr < (BYTE*)buffer + len) {
+        SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* info =
+            (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)ptr;
+        if (info->Relationship == RelationProcessorCore) {
+            KAFFINITY mask = info->Processor.GroupMask[0].Mask;
+            for (int i = 0; i < sched->num_logical_cores; i++) {
+                if (mask & (1ULL << i))
+                    sched->logical_to_physical[i] = phys_index;
+            }
+            phys_index++;
+        }
+        ptr += info->Size;
+    }
+    sched->num_physical_cores = phys_index;
+    free(buffer);
+}
+
 static DWORD WINAPI hw_task_runner(LPVOID arg) {
     HWTask* task = (HWTask*)arg;
     HWScheduler* sched = task->scheduler;
 
     if (task->assigned_core < 0) {
         EnterCriticalSection(&sched->lock);
-        int min_core = 0;
-        for (int i = 1; i < sched->num_cores; i++) {
-            if (sched->tasks_per_core[i] < sched->tasks_per_core[min_core])
-                min_core = i;
+        int min_core = -1;
+
+        // Prefer spreading across physical cores
+        for (int i = 0; i < sched->num_logical_cores; i++) {
+            int phys = sched->logical_to_physical[i];
+            int already_used = 0;
+            for (int j = 0; j < sched->num_logical_cores; j++) {
+                if (sched->logical_to_physical[j] == phys &&
+                    sched->tasks_per_core[j] > 0) {
+                    already_used = 1;
+                    break;
+                }
+            }
+            if (!already_used) { 
+                min_core = i; 
+                break; 
+            }
         }
+
+        // If all physical cores busy, pick least loaded logical
+        if (min_core == -1) {
+            min_core = 0;
+            for (int i = 1; i < sched->num_logical_cores; i++) {
+                if (sched->tasks_per_core[i] < sched->tasks_per_core[min_core])
+                    min_core = i;
+            }
+        }
+
         task->assigned_core = min_core;
         sched->tasks_per_core[min_core]++;
-        LeaveCriticalSection(&sched->lock);
-    } else {
-        EnterCriticalSection(&sched->lock);
-        sched->tasks_per_core[task->assigned_core]++;
         LeaveCriticalSection(&sched->lock);
     }
 
@@ -40,9 +93,9 @@ static DWORD WINAPI hw_task_runner(LPVOID arg) {
     LeaveCriticalSection(&sched->lock);
 
     task->is_completed = 1;
-
     return 0;
 }
+
 
 hw_task_stats_t hw_get_task_stats(HANDLE thread) {
     hw_task_stats_t stats = {0};
@@ -67,11 +120,18 @@ hw_task_stats_t hw_get_task_stats(HANDLE thread) {
 
 HWScheduler* hw_create_scheduler(int num_cores) {
     HWScheduler* sched = malloc(sizeof(HWScheduler));
-    sched->num_cores = num_cores;
+
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    sched->num_logical_cores = si.dwNumberOfProcessors;
+    sched->num_physical_cores = 0;
     sched->tasks = NULL;
     sched->task_count = 0;
-    sched->tasks_per_core = calloc(num_cores, sizeof(int));
-    sched->completed_tasks_per_core = calloc(num_cores, sizeof(int));
+
+    hw_query_topology(sched);
+
+    sched->tasks_per_core = calloc(sched->num_logical_cores, sizeof(int));
+    sched->completed_tasks_per_core = calloc(sched->num_logical_cores, sizeof(int));
     InitializeCriticalSection(&sched->lock);
     return sched;
 }
@@ -111,10 +171,11 @@ void hw_scheduler_wait(HWScheduler* sched) {
     for (int i = 0; i < sched->task_count; i++) {
         if (!sched->tasks[i]->stats_printed) {
             hw_task_stats_t stats = hw_get_task_stats(sched->tasks[i]->thread_handle);
-            printf("Task on core %d: CPU time = %llu ms, Memory = %llu bytes\n",
-                   sched->tasks[i]->assigned_core,
-                   stats.cpu_time_ms,
-                   stats.memory_usage_bytes);
+            printf("Task on logical core %d (physical %d): CPU time = %llu ms, Memory = %llu bytes\n",
+                sched->tasks[i]->assigned_core,
+                sched->logical_to_physical[sched->tasks[i]->assigned_core],
+                stats.cpu_time_ms,
+                stats.memory_usage_bytes);
 
             sched->tasks[i]->stats_printed = 1;
         }
@@ -122,9 +183,10 @@ void hw_scheduler_wait(HWScheduler* sched) {
     }
 
     printf("\nTask assignment per core:\n");
-    for (int i = 0; i < sched->num_cores; i++) {
-        printf("Core %d handled approx %d tasks\n",
+    for (int i = 0; i < sched->num_logical_cores; i++) {
+        printf("Logical core %d (physical %d) handled approx %d tasks\n",
                i,
+               sched->logical_to_physical[i],
                sched->completed_tasks_per_core[i]);
     }
 

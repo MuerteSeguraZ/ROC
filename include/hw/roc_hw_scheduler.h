@@ -15,11 +15,13 @@ typedef struct HWTask {
 } HWTask;
 
 struct HWScheduler {
-    int num_cores;
+    int num_logical_cores;
+    int num_physical_cores;
+    int* logical_to_physical;
     HWTask** tasks;
     int task_count;
-    int* tasks_per_core;             // currently running tasks
-    int* completed_tasks_per_core;   // total tasks finished per core
+    int* tasks_per_core;
+    int* completed_tasks_per_core;
     CRITICAL_SECTION lock;
 };
 
