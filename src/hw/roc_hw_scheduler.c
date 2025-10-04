@@ -1,4 +1,5 @@
 #include "hw/roc_hw_scheduler.h"
+#include <hw/hw_utils.h>
 #include <windows.h>
 #include <psapi.h>
 #include <stdlib.h>
@@ -79,7 +80,7 @@ static DWORD WINAPI hw_task_runner(LPVOID arg) {
         LeaveCriticalSection(&sched->lock);
     }
 
-    // Bind this thread to the assigned logical core
+    // Bind thread to assigned logical core
     SetThreadAffinityMask(GetCurrentThread(), 1ULL << task->assigned_core);
 
     // Map task priority → Windows thread priority
@@ -92,11 +93,29 @@ static DWORD WINAPI hw_task_runner(LPVOID arg) {
 
     SetThreadPriority(GetCurrentThread(), winprio);
 
-    printf("Task starting on core %d (priority=%d)\n",
-           task->assigned_core, task->priority);
+    printf("Task starting on core %d (priority=%d, quantum=%llu ms)\n",
+           task->assigned_core, task->priority, task->quantum_ms);
 
-    if (task->func)
-        task->func(task);
+    // Initialize time-slice (quantum)
+    hw_timeslice_init(task, task->quantum_ms);
+
+    if (task->func) {
+        uint64_t quantum_end = hw_get_time_ms() + task->quantum_ms;
+
+        // Run task until quantum expires, letting it voluntarily yield
+        while (!task->is_completed && hw_get_time_ms() < quantum_end) {
+            task->func(task);
+
+            // Check if task requested yield
+            if (task->yield_requested) {
+                task->yield_requested = 0;
+                break; // exit loop to allow other tasks
+            }
+
+            // Give up CPU briefly
+            Sleep(0);
+        }
+    }
 
     printf("Task finished on core %d (priority=%d)\n",
            task->assigned_core, task->priority);
@@ -109,7 +128,6 @@ static DWORD WINAPI hw_task_runner(LPVOID arg) {
     task->is_completed = 1;
     return 0;
 }
-
 
 hw_task_stats_t hw_get_task_stats(HANDLE thread) {
     hw_task_stats_t stats = {0};

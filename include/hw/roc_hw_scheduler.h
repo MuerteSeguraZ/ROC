@@ -13,6 +13,9 @@ typedef struct HWTask {
     int priority;                // NEW: higher = more important
     HANDLE thread_handle;
     HWScheduler* scheduler;      // link back to scheduler
+    uint32_t quantum_ms;
+    uint64_t last_start_time;
+    int yield_requested;  
 } HWTask;
 
 struct HWScheduler {
