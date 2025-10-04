@@ -23,7 +23,8 @@
 14. [Phases & Phase Queue (`roc_phase.h` / `roc_phase.c` / `roc_phase_queue.h` / `roc_phase_queue.c`)](#phases--phase-queue)
 15. [Bundles & Bundle Queue (`roc_bundle.h` / `roc_bundle.c` `roc_bundle_queue.h` / `roc_bundle_queue.c`)](#bundles--bundle-queue)
 16. [Campaigns & Campaign Queue (`roc_campaign.h` / `roc_campaign.c` / `roc_campaign_queue.h` / `roc_campaign_queue.c`)](#campaigns--campaign-queue)
-17. [Example Usage](#example-usage)
+17. [Programs & Program Queue (`roc_program.h` / `roc_program.c` / `roc_program_queue.h` / `roc_program_queue.c`)](#programs--program-queues)
+18. [Example Usage](#example-usage)
 
 ---
 
@@ -975,6 +976,88 @@ int main() {
 * Task and bundle dependencies are automatically respected.
 * Campaign statuses allow monitoring of **completion or failure**.
 * Useful for **large-scale orchestration** of complex simulations or pipelines.
+
+---
+
+## Programs & Program Queues
+
+### Creating a Program
+
+```c
+#include "roc_program.h"
+#include "roc_campaign.h"
+
+// Create a program
+RProgram* prog = create_program("Program-Alpha", 1);
+
+// Create a campaign
+RCampaign* camp = create_campaign("Campaign-A", 1);
+program_add_campaign(prog, camp);
+```
+
+### Running a Program
+
+```c
+#include "roc_scheduler.h"
+
+// Create scheduler
+RTaskScheduler* sched = create_scheduler(4);
+
+// Run the program
+program_run(prog, sched);
+```
+
+### Program Status
+
+Programs have a status that can be checked anytime:
+
+```c
+ProgramStatus status = program_status(prog);
+switch (status) {
+    case PROGRAM_PENDING:   printf("Pending\n"); break;
+    case PROGRAM_RUNNING:   printf("Running\n"); break;
+    case PROGRAM_COMPLETED: printf("Completed\n"); break;
+    case PROGRAM_FAILED:    printf("Failed\n"); break;
+}
+```
+
+---
+
+## Program Queues
+
+A **Program Queue** allows scheduling and running multiple programs in order, optionally by priority.
+
+### Creating a Program Queue
+
+```c
+#include "roc_program_queue.h"
+
+RProgramQueue* pq = create_program_queue("MainQueue");
+
+// Add programs
+program_queue_add(pq, prog1);
+program_queue_add(pq, prog2);
+```
+
+### Running Programs in a Queue
+
+```c
+// Run sequentially
+program_queue_run(pq, sched);
+
+// Run by priority
+program_queue_run_priority(pq, sched);
+```
+
+### Queue Status
+
+You can check if all programs in the queue are completed:
+
+```c
+if (program_queue_status(pq) == PROGRAM_QUEUE_COMPLETED) {
+    printf("All programs finished\n");
+}
+```
 
 ---
 
