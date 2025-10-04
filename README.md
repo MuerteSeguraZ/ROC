@@ -27,23 +27,6 @@
 
 ---
 
-## Project Structure
-
-```
-ROC/
-├── md/
-├── include/
-│   ├── roc.h            # Core types and function declarations
-│   ├── roc_task.h       # Task type and functions
-│   └── roc_scheduler.h  # Scheduler types and functions
-├── roc.c                # Node, link, network, controller, and routing implementations
-├── roc_task.c           # Task creation, execution, and resource allocation
-├── roc_scheduler.c      # Scheduler for running tasks asynchronously
-└── main.c               # Demo usage of nodes, tasks, and scheduler
-```
-
----
-
 ## Core Concepts
 
 * **RNode** – Represents a resource node: CPU, GPU, memory, or storage. Each node has capacity, availability, state, and connected links.
@@ -629,10 +612,6 @@ int main() {
 
 ---
 
-Here’s the section for **Phases & Phase Queue** fully formatted and consistent with your README style. I polished it to include concepts, functions, statuses, and examples while matching the style of the rest of your document:
-
----
-
 ## Phases & Phase Queue
 
 Phases are high-level orchestration units that group multiple **stages** or tasks together. Each phase can have a **priority**, and multiple phases can be executed sequentially or based on priority.
@@ -725,6 +704,14 @@ int main() {
     return 0;
 }
 ```
+---
+
+### Notes
+
+* Phases can mix **stages and tasks** in the same unit.
+* Phase queues execute phases **sequentially** respecting priority.
+* Supports **thread-safe execution** through the scheduler.
+* Phase and phase queue statuses allow monitoring of **completion or failure**.
 
 ---
 
@@ -846,6 +833,14 @@ int main() {
     return 0;
 }
 ```
+
+### Notes
+
+* Bundles can contain **mixed items**: tasks, jobs, workflows.
+* Bundle queues allow **priority-based execution**.
+* Tasks inside a bundle respect **dependencies and resource allocations**.
+* Bundle statuses track **completion and failure**.
+* Multiple bundles can execute **concurrently** if resources allow.
 
 ---
 
@@ -980,25 +975,6 @@ int main() {
 * Task and bundle dependencies are automatically respected.
 * Campaign statuses allow monitoring of **completion or failure**.
 * Useful for **large-scale orchestration** of complex simulations or pipelines.
-
----
-
-### Notes
-
-* Bundles can contain **mixed items**: tasks, jobs, workflows.
-* Bundle queues allow **priority-based execution**.
-* Tasks inside a bundle respect **dependencies and resource allocations**.
-* Bundle statuses track **completion and failure**.
-* Multiple bundles can execute **concurrently** if resources allow.
-
----
-
-### Notes
-
-* Phases can mix **stages and tasks** in the same unit.
-* Phase queues execute phases **sequentially** respecting priority.
-* Supports **thread-safe execution** through the scheduler.
-* Phase and phase queue statuses allow monitoring of **completion or failure**.
 
 ---
 
