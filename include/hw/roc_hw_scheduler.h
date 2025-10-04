@@ -1,20 +1,27 @@
 #pragma once
 #include "roc_hw_stats.h"
+#include <windows.h>
+
+// Forward declare HWScheduler so HWTask can reference it
+typedef struct HWScheduler HWScheduler;
 
 typedef struct HWTask {
-    void (*func)(struct HWTask*); // Task function
-    int assigned_core;            // CPU core to pin to
-    int is_completed;             // Completion flag
-    HANDLE thread_handle;         // Windows thread handle
-    int stats_printed;
+    void (*func)(struct HWTask* task);
+    int assigned_core;           // initialize to -1
+    int stats_printed;           // initialize to 0
+    int is_completed;            // initialize to 0
+    HANDLE thread_handle;
+    HWScheduler* scheduler;      // link back to scheduler
 } HWTask;
 
-typedef struct HWScheduler {
+struct HWScheduler {
     int num_cores;
     HWTask** tasks;
     int task_count;
-    CRITICAL_SECTION lock;        // Windows mutex
-} HWScheduler;
+    int* tasks_per_core;             // currently running tasks
+    int* completed_tasks_per_core;   // total tasks finished per core
+    CRITICAL_SECTION lock;
+};
 
 // Scheduler API
 HWScheduler* hw_create_scheduler(int num_cores);

@@ -8,18 +8,39 @@ int stats_printed;
 
 static DWORD WINAPI hw_task_runner(LPVOID arg) {
     HWTask* task = (HWTask*)arg;
+    HWScheduler* sched = task->scheduler;
 
-    // Pin thread to assigned core
-    if (task->assigned_core >= 0) {
-        DWORD_PTR mask = 1ULL << task->assigned_core;
-        SetThreadAffinityMask(GetCurrentThread(), mask);
+    if (task->assigned_core < 0) {
+        EnterCriticalSection(&sched->lock);
+        int min_core = 0;
+        for (int i = 1; i < sched->num_cores; i++) {
+            if (sched->tasks_per_core[i] < sched->tasks_per_core[min_core])
+                min_core = i;
+        }
+        task->assigned_core = min_core;
+        sched->tasks_per_core[min_core]++;
+        LeaveCriticalSection(&sched->lock);
+    } else {
+        EnterCriticalSection(&sched->lock);
+        sched->tasks_per_core[task->assigned_core]++;
+        LeaveCriticalSection(&sched->lock);
     }
 
-    // Run the actual task function
+    SetThreadAffinityMask(GetCurrentThread(), 1ULL << task->assigned_core);
+    printf("Task starting on core %d\n", task->assigned_core);
+
     if (task->func)
         task->func(task);
 
-    task->is_completed = 1; // Signal completion
+    printf("Task finished on core %d\n", task->assigned_core);
+
+    EnterCriticalSection(&sched->lock);
+    sched->tasks_per_core[task->assigned_core]--;
+    sched->completed_tasks_per_core[task->assigned_core]++;
+    LeaveCriticalSection(&sched->lock);
+
+    task->is_completed = 1;
+
     return 0;
 }
 
@@ -49,12 +70,15 @@ HWScheduler* hw_create_scheduler(int num_cores) {
     sched->num_cores = num_cores;
     sched->tasks = NULL;
     sched->task_count = 0;
+    sched->tasks_per_core = calloc(num_cores, sizeof(int));
+    sched->completed_tasks_per_core = calloc(num_cores, sizeof(int));
     InitializeCriticalSection(&sched->lock);
     return sched;
 }
 
 void hw_scheduler_add_task(HWScheduler* sched, HWTask* task) {
     EnterCriticalSection(&sched->lock);
+    task->scheduler = sched; // link task to scheduler
     sched->tasks = realloc(sched->tasks, sizeof(HWTask*) * (sched->task_count + 1));
     sched->tasks[sched->task_count++] = task;
     LeaveCriticalSection(&sched->lock);
@@ -85,22 +109,32 @@ void hw_scheduler_wait(HWScheduler* sched) {
 
     // Print per-task stats after completion
     for (int i = 0; i < sched->task_count; i++) {
-    if (!sched->tasks[i]->stats_printed) {
-        hw_task_stats_t stats = hw_get_task_stats(sched->tasks[i]->thread_handle);
-        printf("Task on core %d: CPU time = %llu ms, Memory = %llu bytes\n",
-               sched->tasks[i]->assigned_core,
-               stats.cpu_time_ms,
-               stats.memory_usage_bytes);
+        if (!sched->tasks[i]->stats_printed) {
+            hw_task_stats_t stats = hw_get_task_stats(sched->tasks[i]->thread_handle);
+            printf("Task on core %d: CPU time = %llu ms, Memory = %llu bytes\n",
+                   sched->tasks[i]->assigned_core,
+                   stats.cpu_time_ms,
+                   stats.memory_usage_bytes);
 
-        sched->tasks[i]->stats_printed = 1; // mark as printed
+            sched->tasks[i]->stats_printed = 1;
+        }
+        CloseHandle(sched->tasks[i]->thread_handle);
     }
-    CloseHandle(sched->tasks[i]->thread_handle);
-  }
+
+    printf("\nTask assignment per core:\n");
+    for (int i = 0; i < sched->num_cores; i++) {
+        printf("Core %d handled approx %d tasks\n",
+               i,
+               sched->completed_tasks_per_core[i]);
+    }
+
     free(handles);
 }
 
 void hw_scheduler_destroy(HWScheduler* sched) {
     DeleteCriticalSection(&sched->lock);
     free(sched->tasks);
+    free(sched->tasks_per_core);
+    free(sched->completed_tasks_per_core);
     free(sched);
 }

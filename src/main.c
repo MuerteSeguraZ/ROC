@@ -1,54 +1,51 @@
-#include "hw/roc_hw_scheduler.h"
-#include <windows.h>
 #include <stdio.h>
+#include <windows.h>
+#include "hw/roc_hw_scheduler.h" 
 
+#define NUM_CORES 4
+#define NUM_TASKS 12
+
+// Simple task: just sleep a bit and print stats
 void sample_task(HWTask* task) {
-    printf("Task starting on core %d\n", task->assigned_core);
-    
-    volatile long sum = 0;
-    for (long i = 0; i < 100000000; i++) {
-        sum += i;
-    }
-
-    printf("Task finished on core %d\n", task->assigned_core);
+    Sleep(100 + (rand() % 100)); // simulate work
 }
 
 int main() {
-    HWScheduler* sched = hw_create_scheduler(4);
+    printf("=== ROC HW Layer Static Affinity Test ===\n");
 
-    // Create 4 tasks, one per core
-    for (int i = 0; i < 4; i++) {
-        HWTask* t = malloc(sizeof(HWTask));
-        t->func = sample_task;
-        t->assigned_core = i;
-        t->is_completed = 0;
-        t->thread_handle = NULL;
-        hw_scheduler_add_task(sched, t);
+    HWScheduler* sched = hw_create_scheduler(NUM_CORES);
+
+    HWTask* tasks[NUM_TASKS];
+
+    // Create tasks with no assigned core (-1) to test load balancing
+    for (int i = 0; i < NUM_TASKS; i++) {
+        tasks[i] = malloc(sizeof(HWTask));
+        tasks[i]->assigned_core = -1; // let scheduler pick least-loaded core
+        tasks[i]->stats_printed = 0;
+        tasks[i]->is_completed = 0;
+        tasks[i]->func = sample_task;
+        hw_scheduler_add_task(sched, tasks[i]);
     }
 
-    // Run tasks asynchronously
-    hw_scheduler_runasync(sched);
+    // Start all tasks
+    hw_scheduler_start(sched);   
 
-    // Poll for task completion and print stats
-    int done = 0;
-    while (!done) {
-        done = 1;
-        for (int i = 0; i < sched->task_count; i++) {
-            if (!sched->tasks[i]->is_completed) {
-                done = 0;
-            } else {
-                hw_task_stats_t stats = hw_get_task_stats(sched->tasks[i]->thread_handle);
-                printf(
-                    "Task on core %d: CPU time = %llu ms, Memory = %llu bytes\n",
-                    sched->tasks[i]->assigned_core, stats.cpu_time_ms, stats.memory_usage_bytes
-                );
-            }
-        }
-        Sleep(100); // Poll interval
+    // Wait for all tasks to finish
+    for (int i = 0; i < NUM_TASKS; i++) {
+        WaitForSingleObject(tasks[i]->thread_handle, INFINITE);
     }
 
-    // Clean up
-    hw_scheduler_wait(sched);
+    printf("\nTask assignment per core:\n");
+    for (int i = 0; i < NUM_CORES; i++) {
+        printf("Core %d handled approx %d tasks\n", i, sched->completed_tasks_per_core[i]);
+    }
+
+    // Cleanup
+    for (int i = 0; i < NUM_TASKS; i++) free(tasks[i]);
+    free(sched->tasks_per_core);
+    free(sched->tasks);
     hw_scheduler_destroy(sched);
+
+    printf("\n=== Test Completed ===\n");
     return 0;
 }
