@@ -8,6 +8,7 @@ typedef struct HWScheduler HWScheduler;
 typedef struct HWTask {
     void (*func)(struct HWTask* task);
     int assigned_core;           // initialize to -1
+    int target_core;
     int stats_printed;           // initialize to 0
     int is_completed;            // initialize to 0
     int priority;                // NEW: higher = more important

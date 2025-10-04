@@ -6,6 +6,7 @@
     "roc.h": "c",
     "roc_scheduler.h": "c",
     "roc_task.h": "c",
-    "roc_job_queue.h": "c"
+    "roc_job_queue.h": "c",
+    "hw_utils.h": "c"
   }
 }

@@ -45,6 +45,7 @@ static DWORD WINAPI hw_task_runner(LPVOID arg) {
     HWTask* task = (HWTask*)arg;
     HWScheduler* sched = task->scheduler;
 
+    // Assign core if not already assigned
     if (task->assigned_core < 0) {
         EnterCriticalSection(&sched->lock);
         int min_core = -1;
@@ -96,24 +97,44 @@ static DWORD WINAPI hw_task_runner(LPVOID arg) {
     printf("Task starting on core %d (priority=%d, quantum=%llu ms)\n",
            task->assigned_core, task->priority, task->quantum_ms);
 
-    // Initialize time-slice (quantum)
+    // Initialize quantum
     hw_timeslice_init(task, task->quantum_ms);
 
     if (task->func) {
-        uint64_t quantum_end = hw_get_time_ms() + task->quantum_ms;
+        // Run until task is completed
+        while (!task->is_completed) {
+            uint64_t quantum_end = hw_get_time_ms() + task->quantum_ms;
 
-        // Run task until quantum expires, letting it voluntarily yield
-        while (!task->is_completed && hw_get_time_ms() < quantum_end) {
-            task->func(task);
+            // Execute task until quantum expires or yield/migration occurs
+            while (!task->is_completed && hw_get_time_ms() < quantum_end) {
+                task->func(task);
 
-            // Check if task requested yield
-            if (task->yield_requested) {
-                task->yield_requested = 0;
-                break; // exit loop to allow other tasks
+                // Voluntary yield
+                if (task->yield_requested) {
+                    task->yield_requested = 0;
+                    break;
+                }
+
+                // Task migration
+                if (task->target_core >= 0 && task->target_core != task->assigned_core) {
+                    EnterCriticalSection(&sched->lock);
+                    sched->tasks_per_core[task->assigned_core]--;
+                    task->assigned_core = task->target_core;
+                    sched->tasks_per_core[task->assigned_core]++;
+                    task->target_core = -1;
+                    SetThreadAffinityMask(GetCurrentThread(), 1ULL << task->assigned_core);
+                    LeaveCriticalSection(&sched->lock);
+                    printf(" -> Task migrated to core %d\n", task->assigned_core);
+                    break; // exit inner loop to re-evaluate
+                }
+
+                Sleep(0); // yield CPU
             }
 
-            // Give up CPU briefly
-            Sleep(0);
+            // Reset quantum for next round if task still running
+            if (!task->is_completed) {
+                hw_timeslice_init(task, task->quantum_ms);
+            }
         }
     }
 
