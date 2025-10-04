@@ -48,7 +48,7 @@ static DWORD WINAPI hw_task_runner(LPVOID arg) {
         EnterCriticalSection(&sched->lock);
         int min_core = -1;
 
-        // Prefer spreading across physical cores
+        // Prefer spreading across physical cores first
         for (int i = 0; i < sched->num_logical_cores; i++) {
             int phys = sched->logical_to_physical[i];
             int already_used = 0;
@@ -59,9 +59,9 @@ static DWORD WINAPI hw_task_runner(LPVOID arg) {
                     break;
                 }
             }
-            if (!already_used) { 
-                min_core = i; 
-                break; 
+            if (!already_used) {
+                min_core = i;
+                break;
             }
         }
 
@@ -79,13 +79,27 @@ static DWORD WINAPI hw_task_runner(LPVOID arg) {
         LeaveCriticalSection(&sched->lock);
     }
 
+    // Bind this thread to the assigned logical core
     SetThreadAffinityMask(GetCurrentThread(), 1ULL << task->assigned_core);
-    printf("Task starting on core %d\n", task->assigned_core);
+
+    // Map task priority → Windows thread priority
+    int prio = task->priority;
+    int winprio = THREAD_PRIORITY_NORMAL;
+    if (prio >= 10) winprio = THREAD_PRIORITY_HIGHEST;
+    else if (prio > 0) winprio = THREAD_PRIORITY_ABOVE_NORMAL;
+    else if (prio < 0 && prio > -10) winprio = THREAD_PRIORITY_BELOW_NORMAL;
+    else if (prio <= -10) winprio = THREAD_PRIORITY_LOWEST;
+
+    SetThreadPriority(GetCurrentThread(), winprio);
+
+    printf("Task starting on core %d (priority=%d)\n",
+           task->assigned_core, task->priority);
 
     if (task->func)
         task->func(task);
 
-    printf("Task finished on core %d\n", task->assigned_core);
+    printf("Task finished on core %d (priority=%d)\n",
+           task->assigned_core, task->priority);
 
     EnterCriticalSection(&sched->lock);
     sched->tasks_per_core[task->assigned_core]--;
@@ -138,11 +152,24 @@ HWScheduler* hw_create_scheduler(int num_cores) {
 
 void hw_scheduler_add_task(HWScheduler* sched, HWTask* task) {
     EnterCriticalSection(&sched->lock);
-    task->scheduler = sched; // link task to scheduler
+    task->scheduler = sched;
+
+    // Expand task list
     sched->tasks = realloc(sched->tasks, sizeof(HWTask*) * (sched->task_count + 1));
     sched->tasks[sched->task_count++] = task;
+
+    // Sort tasks by priority (descending)
+    for (int i = sched->task_count - 1; i > 0; i--) {
+        if (sched->tasks[i]->priority > sched->tasks[i-1]->priority) {
+            HWTask* tmp = sched->tasks[i];
+            sched->tasks[i] = sched->tasks[i-1];
+            sched->tasks[i-1] = tmp;
+        }
+    }
+
     LeaveCriticalSection(&sched->lock);
 }
+
 
 void hw_scheduler_start(HWScheduler* sched) {
     for (int i = 0; i < sched->task_count; i++) {

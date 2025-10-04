@@ -10,6 +10,7 @@ typedef struct HWTask {
     int assigned_core;           // initialize to -1
     int stats_printed;           // initialize to 0
     int is_completed;            // initialize to 0
+    int priority;                // NEW: higher = more important
     HANDLE thread_handle;
     HWScheduler* scheduler;      // link back to scheduler
 } HWTask;
