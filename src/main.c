@@ -1,74 +1,54 @@
+#include "hw/roc_hw_scheduler.h"
+#include <windows.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>                // ✅ for usleep
-#include "roc_scheduler.h"
-#include "roc_task.h"
-#include "roc_bundle.h"
-#include "roc_campaign.h"
-#include "roc_program.h"
-#include "roc_program_queue.h"
-#include "roc_thread.h"
+
+void sample_task(HWTask* task) {
+    printf("Task starting on core %d\n", task->assigned_core);
+    
+    volatile long sum = 0;
+    for (long i = 0; i < 100000000; i++) {
+        sum += i;
+    }
+
+    printf("Task finished on core %d\n", task->assigned_core);
+}
 
 int main() {
-    printf("=== ROC Multithreaded Program Queue Demo ===\n");
+    HWScheduler* sched = hw_create_scheduler(4);
 
-    // --- Scheduler ---
-    RTaskScheduler* sched = create_scheduler(4); // 4 resource units
-    scheduler_start(sched);                       // start background worker
-
-    // --- Tasks ---
-    RTask* t1 = create_task("Task-CPU1", 2);
-    RTask* t2 = create_task("Task-CPU2", 1);
-    RTask* t3 = create_task("Task-GPU1", 1);
-
-    // --- Bundles ---
-    RBundle* b1 = create_bundle("Bundle-Alpha", 1);
-    bundle_add_task(b1, t1);
-
-    RBundle* b2 = create_bundle("Bundle-Beta", 2);
-    bundle_add_task(b2, t2);
-
-    RBundle* b3 = create_bundle("Bundle-Gamma", 1);
-    bundle_add_task(b3, t3);
-
-    // --- Campaigns ---
-    RCampaign* c1 = create_campaign("Campaign-A", 1);
-    campaign_add_bundle(c1, b1);
-    campaign_add_bundle(c1, b2);
-
-    RCampaign* c2 = create_campaign("Campaign-B", 2);
-    campaign_add_bundle(c2, b3);
-
-    // --- Programs ---
-    RProgram* p1 = create_program("Program-Alpha", 1);
-    program_add_campaign(p1, c1);
-
-    RProgram* p2 = create_program("Program-Beta", 2);
-    program_add_campaign(p2, c2);
-
-    // --- Program Queue ---
-    RProgramQueue* pq = create_program_queue("MainQueue");
-    program_queue_add(pq, p1);
-    program_queue_add(pq, p2);
-
-    // --- Multithreaded Execution ---
-    RThread* threads[pq->program_count];
-    for (int i = 0; i < pq->program_count; i++) {
-        threads[i] = thread_create((void(*)(void*))program_run, pq->programs[i]);
-        thread_start(threads[i]);
+    // Create 4 tasks, one per core
+    for (int i = 0; i < 4; i++) {
+        HWTask* t = malloc(sizeof(HWTask));
+        t->func = sample_task;
+        t->assigned_core = i;
+        t->is_completed = 0;
+        t->thread_handle = NULL;
+        hw_scheduler_add_task(sched, t);
     }
 
-    // Wait for all threads to finish
-    for (int i = 0; i < pq->program_count; i++) {
-        thread_join(threads[i]);
-        free(threads[i]);
+    // Run tasks asynchronously
+    hw_scheduler_runasync(sched);
+
+    // Poll for task completion and print stats
+    int done = 0;
+    while (!done) {
+        done = 1;
+        for (int i = 0; i < sched->task_count; i++) {
+            if (!sched->tasks[i]->is_completed) {
+                done = 0;
+            } else {
+                hw_task_stats_t stats = hw_get_task_stats(sched->tasks[i]->thread_handle);
+                printf(
+                    "Task on core %d: CPU time = %llu ms, Memory = %llu bytes\n",
+                    sched->tasks[i]->assigned_core, stats.cpu_time_ms, stats.memory_usage_bytes
+                );
+            }
+        }
+        Sleep(100); // Poll interval
     }
 
-    printf("All programs completed!\n");
-
-    destroy_program_queue(pq);
-    scheduler_stop(sched);
-    destroy_scheduler(sched);
-
+    // Clean up
+    hw_scheduler_wait(sched);
+    hw_scheduler_destroy(sched);
     return 0;
 }
